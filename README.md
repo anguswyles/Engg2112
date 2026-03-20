@@ -25,9 +25,9 @@ The aim of this project is to build a simple system that can help farmers make m
 ## Team
 
 - Angus - Domain Researcher
-- James — Project Lead
-- Oscar — ML Engineer
-- Byron — Data Engineer
+- James - Project Lead
+- Oscar - ML Engineer
+- Byron - Data Engineer
 
 ## Current progress
 
