@@ -1,4 +1,4 @@
-# Engg2112
+# ENGG2112
 
 <p align="center">
   <img src="images/datafarmers.png" alt="Team photo" width="700"/>
