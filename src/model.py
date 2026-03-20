@@ -114,13 +114,4 @@ print("\nSample Predictions")
 for i, pred in enumerate(predictions, start=1):
     print(f"Example {i}: Predicted crop = {pred}")
 
-def recommend_crop(moisture, nitrogen, ph, temperature, rainfall):
-    input_df = pd.DataFrame([{
-        "moisture": moisture,
-        "nitrogen": nitrogen,
-        "ph": ph,
-        "temperature": temperature,
-        "rainfall": rainfall
-    }])
-    prediction = model.predict(input_df)[0]
-    return prediction
+
