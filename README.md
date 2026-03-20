@@ -29,25 +29,68 @@ The aim of this project is to build a simple data-driven system that can help fa
 - Oscar — ML Engineer
 - Byron — Data Engineer
 
-## Tech stack
-
-- Python
-- NumPy
-- Pandas
-- scikit-learn
-
 ## Current progress
 
-At this stage, the project is still in early development.
+### Angus (Domain Researcher)
 
-So far, the team has:
+**Completed:**
 
-- defined the project direction
-- assigned roles
-- built an initial baseline model
-- tested the pipeline using synthetic data
+- Found potential datasets for use in the model
 
-The next step is to source and clean a real dataset so the model can be trained on something more realistic.
+**Next steps:**
+
+- Refine understanding of how environmental factors influence crop selection
+- Validate assumptions used in the model
+- Assist in selecting the most relevant features from real datasets
+
+---
+
+### James (Project Lead)
+
+**Completed:**
+
+- N/A
+
+**Next steps:**
+
+- Do something
+
+---
+
+### Oscar (ML Engineer)
+
+**Completed:**
+
+- Built an initial baseline machine learning model
+- Generated synthetic data for testing
+- Evaluated model performance using basic metrics
+
+**Next steps:**
+
+- Improve model performance and structure
+- Implement cross-validation and tuning
+- Adapt model to work with real-world data
+- Test implementation of image machine learning
+
+---
+
+### Byron (Data Engineer)
+
+**Completed:**
+
+- Identified relevant factors affecting crop growth (soil, moisture, etc.)
+- Researched key agricultural concepts and terminology
+- Investigated potential data sources
+
+**Next steps:**
+
+- Source and clean a real dataset
+- Build a reliable data pipeline
+- Ensure data is formatted correctly for model input
+
+---
+
+Overall, the next major milestone is to integrate a real dataset so the system can move beyond synthetic testing.
 
 ## Challenges
 
