@@ -31,62 +31,12 @@ The aim of this project is to build a simple data-driven system that can help fa
 
 ## Current progress
 
-### Angus (Domain Researcher)
-
-**Completed:**
-
-- Found potential datasets for use in the model
-
-**Next steps:**
-
-- Refine understanding of how environmental factors influence crop selection
-- Validate assumptions used in the model
-- Assist in selecting the most relevant features from real datasets
-
----
-
-### James (Project Lead)
-
-**Completed:**
-
-- N/A
-
-**Next steps:**
-
-- Do something
-
----
-
-### Oscar (ML Engineer)
-
-**Completed:**
-
-- Built an initial baseline machine learning model
-- Generated synthetic data for testing
-- Evaluated model performance using basic metrics
-
-**Next steps:**
-
-- Improve model performance and structure
-- Implement cross-validation and tuning
-- Adapt model to work with real-world data
-- Test implementation of image machine learning
-
----
-
-### Byron (Data Engineer)
-
-**Completed:**
-
-- Identified relevant factors affecting crop growth (soil, moisture, etc.)
-- Researched key agricultural concepts and terminology
-- Investigated potential data sources
-
-**Next steps:**
-
-- Source and clean a real dataset
-- Build a reliable data pipeline
-- Ensure data is formatted correctly for model input
+| Team Member | Role              | Completed                                                                                                                                                                         | Next steps                                                                                                                                                                                          |
+| ----------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Angus**   | Domain Researcher | - Found potential datasets for use in the model                                                                                                                                   | - Refine understanding of how environmental factors influence crop selection <br> - Validate assumptions used in the model <br> - Assist in selecting the most relevant features from real datasets |
+| **James**   | Project Lead      | - N/A                                                                                                                                                                             | - Do something                                                                                                                                                                                      |
+| **Oscar**   | ML Engineer       | - Built an initial baseline machine learning model <br> - Generated synthetic data for testing <br> - Evaluated model performance using basic metrics                             | - Improve model performance and structure <br> - Implement cross-validation and tuning <br> - Adapt model to work with real-world data <br> - Test implementation of image machine learning         |
+| **Byron**   | Data Engineer     | - Identified relevant factors affecting crop growth (soil, moisture, etc.) <br> - Researched key agricultural concepts and terminology <br> - Investigated potential data sources | - Source and clean a real dataset <br> - Build a reliable data pipeline <br> - Ensure data is formatted correctly for model input                                                                   |
 
 ---
 
