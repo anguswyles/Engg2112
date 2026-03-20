@@ -24,7 +24,7 @@ The aim of this project is to build a simple data-driven system that can help fa
 
 ## Team
 
-- Angus — Domain Researcher
+- Angus - Domain Researcher
 - James — Project Lead
 - Oscar — ML Engineer
 - Byron — Data Engineer
@@ -64,14 +64,3 @@ Some of the main challenges so far are:
 - compare baseline models
 - improve robustness with cross-validation and tuning
 - extend the project toward more practical recommendations
-
-## Repository structure
-
-```text
-Engg2112/
-├── src/
-│   └── model.py
-├── images/
-│   └── team-photo.png
-└── README.md
-```
