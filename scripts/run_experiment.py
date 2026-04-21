@@ -284,7 +284,7 @@ print('  saved feature_importance.png')
 # ── horizon comparison ────────────────────────────────────────────────────────
 print('\nRunning horizon comparison (this takes a few minutes)...')
 
-horizons    = [24, 48, 72, 120, 168]
+horizons    = [24, 48, 72, 96, 120, 168]
 results     = []
 stations_nw = load_all_stations(with_weather=False)
 stations_w  = load_all_stations(with_weather=True)
@@ -309,32 +309,44 @@ for h in horizons:
     m_w.fit(X_w[:sp_w], y_w[:sp_w])
     pred_w = m_w.predict(X_w[sp_w:])
 
+    cm_nw = classification_metrics(y_nw[sp_nw:], pred_nw)
+    cm_w  = classification_metrics(y_w[sp_w:],   pred_w)
+
     results.append({
-        'horizon':     h,
-        'persist_mae': round(mean_absolute_error(y_nw[sp_nw:], persist), 4),
-        'persist_r2':  round(r2_score(y_nw[sp_nw:], persist), 4),
-        'xgb_nw_mae':  round(mean_absolute_error(y_nw[sp_nw:], pred_nw), 4),
-        'xgb_nw_r2':   round(r2_score(y_nw[sp_nw:], pred_nw), 4),
-        'xgb_w_mae':   round(mean_absolute_error(y_w[sp_w:], pred_w), 4),
-        'xgb_w_r2':    round(r2_score(y_w[sp_w:], pred_w), 4),
+        'horizon':        h,
+        'persist_mae':    round(mean_absolute_error(y_nw[sp_nw:], persist), 4),
+        'persist_r2':     round(r2_score(y_nw[sp_nw:], persist), 4),
+        'xgb_nw_mae':     round(mean_absolute_error(y_nw[sp_nw:], pred_nw), 4),
+        'xgb_nw_r2':      round(r2_score(y_nw[sp_nw:], pred_nw), 4),
+        'xgb_nw_recall':  round(cm_nw['recall'], 4),
+        'xgb_nw_roc_auc': round(cm_nw['roc_auc'], 4),
+        'xgb_w_mae':      round(mean_absolute_error(y_w[sp_w:], pred_w), 4),
+        'xgb_w_r2':       round(r2_score(y_w[sp_w:], pred_w), 4),
+        'xgb_w_recall':   round(cm_w['recall'], 4),
+        'xgb_w_roc_auc':  round(cm_w['roc_auc'], 4),
     })
     print(f'  t+{h}h done')
 
 hr = pd.DataFrame(results)
+hr['mae_gap']     = hr['xgb_nw_mae']     - hr['xgb_w_mae']
+hr['r2_gap']      = hr['xgb_w_r2']       - hr['xgb_nw_r2']
+hr['recall_gap']  = hr['xgb_w_recall']   - hr['xgb_nw_recall']
+hr['roc_auc_gap'] = hr['xgb_w_roc_auc']  - hr['xgb_nw_roc_auc']
 hr.to_csv(os.path.join(IMAGES_DIR, 'horizon_comparison.csv'), index=False)
 
+# ── performance vs horizon ────────────────────────────────────────────────────
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-ax1.plot(hr['horizon'], hr['persist_mae'],  'k--',               marker='o', label='Persistence')
-ax1.plot(hr['horizon'], hr['xgb_nw_mae'],   color='steelblue',   marker='o', label='XGBoost (no weather)')
-ax1.plot(hr['horizon'], hr['xgb_w_mae'],    color='darkorange',  marker='o', label='XGBoost (with weather)')
+ax1.plot(hr['horizon'], hr['persist_mae'],  'k--',              marker='o', label='Persistence')
+ax1.plot(hr['horizon'], hr['xgb_nw_mae'],   color='steelblue',  marker='o', label='XGBoost (no weather)')
+ax1.plot(hr['horizon'], hr['xgb_w_mae'],    color='darkorange', marker='o', label='XGBoost (with weather)')
 ax1.set_xlabel('Prediction Horizon (hours)')
 ax1.set_ylabel('MAE (m³/m³)')
 ax1.set_title('MAE vs Horizon')
 ax1.legend()
 
-ax2.plot(hr['horizon'], hr['persist_r2'],  'k--',               marker='o', label='Persistence')
-ax2.plot(hr['horizon'], hr['xgb_nw_r2'],   color='steelblue',   marker='o', label='XGBoost (no weather)')
-ax2.plot(hr['horizon'], hr['xgb_w_r2'],    color='darkorange',  marker='o', label='XGBoost (with weather)')
+ax2.plot(hr['horizon'], hr['persist_r2'],  'k--',              marker='o', label='Persistence')
+ax2.plot(hr['horizon'], hr['xgb_nw_r2'],   color='steelblue',  marker='o', label='XGBoost (no weather)')
+ax2.plot(hr['horizon'], hr['xgb_w_r2'],    color='darkorange', marker='o', label='XGBoost (with weather)')
 ax2.set_xlabel('Prediction Horizon (hours)')
 ax2.set_ylabel('R²')
 ax2.set_title('R² vs Horizon')
@@ -345,6 +357,56 @@ plt.tight_layout()
 plt.savefig(os.path.join(IMAGES_DIR, 'horizon_comparison.png'), dpi=150, bbox_inches='tight')
 plt.close()
 print('  saved horizon_comparison.png')
+
+# ── weather impact gap ────────────────────────────────────────────────────────
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+def _bar(ax, x, y, color, ylabel, title):
+    ax.bar(x, y, color=color, width=10)
+    ax.axhline(0, color='black', linewidth=0.8, linestyle='--')
+    for xi, v in zip(x, y):
+        ax.text(xi, v + abs(y.max()) * 0.02, f'{v:+.4f}', ha='center', va='bottom', fontsize=8)
+    ax.set_xlabel('Prediction Horizon (hours)')
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.set_xticks(x)
+
+_bar(axes[0, 0], hr['horizon'], hr['mae_gap'],
+     'darkorange', 'MAE reduction (m³/m³)', 'Weather Impact on MAE\n(positive = weather helps)')
+_bar(axes[0, 1], hr['horizon'], hr['r2_gap'],
+     'steelblue',  'R² gain', 'Weather Impact on R²\n(positive = weather helps)')
+_bar(axes[1, 0], hr['horizon'], hr['recall_gap'],
+     'green',      'Recall gain', 'Weather Impact on Recall\n(catching below-threshold events)')
+_bar(axes[1, 1], hr['horizon'], hr['roc_auc_gap'],
+     'purple',     'ROC AUC gain', 'Weather Impact on ROC AUC')
+
+plt.suptitle(f'Benefit of Weather Features Across Horizons — {RUN_NAME}')
+plt.tight_layout()
+plt.savefig(os.path.join(IMAGES_DIR, 'weather_impact.png'), dpi=150, bbox_inches='tight')
+plt.close()
+print('  saved weather_impact.png')
+
+# ── recall vs horizon ─────────────────────────────────────────────────────────
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+ax1.plot(hr['horizon'], hr['xgb_nw_recall'],  color='steelblue',  marker='o', label='XGBoost (no weather)')
+ax1.plot(hr['horizon'], hr['xgb_w_recall'],   color='darkorange', marker='o', label='XGBoost (with weather)')
+ax1.set_xlabel('Prediction Horizon (hours)')
+ax1.set_ylabel('Recall')
+ax1.set_title('Recall vs Horizon')
+ax1.legend()
+
+ax2.plot(hr['horizon'], hr['xgb_nw_roc_auc'], color='steelblue',  marker='o', label='XGBoost (no weather)')
+ax2.plot(hr['horizon'], hr['xgb_w_roc_auc'],  color='darkorange', marker='o', label='XGBoost (with weather)')
+ax2.set_xlabel('Prediction Horizon (hours)')
+ax2.set_ylabel('ROC AUC')
+ax2.set_title('ROC AUC vs Horizon')
+ax2.legend()
+
+plt.suptitle(f'Classification Performance vs Horizon — {RUN_NAME}')
+plt.tight_layout()
+plt.savefig(os.path.join(IMAGES_DIR, 'recall_vs_horizon.png'), dpi=150, bbox_inches='tight')
+plt.close()
+print('  saved recall_vs_horizon.png')
 
 print(f'\nAll outputs saved to images/{RUN_NAME}/')
 print('\nHorizon comparison table:')
