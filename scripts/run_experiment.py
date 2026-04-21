@@ -1,13 +1,15 @@
 """
-Test 2 — weather-augmented models at t+72h horizon.
-Compares against Test 1 (no weather, t+24h) and persistence baselines.
-Saves all plots and CSVs to images/test 2/
+Experiment runner — trains RF, XGBoost, and LSTM and saves plots + metrics.
+Each run is saved to a new folder under images/ for progression tracking.
 
-Run from project root:  python scripts/run_experiment.py
+Usage:
+    python scripts/run_experiment.py                        # auto-names next test
+    python scripts/run_experiment.py "test 3 - added NDVI" # custom name
 """
 
 import os
 import sys
+import argparse
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'models'))
 
@@ -32,26 +34,31 @@ from prepare import load_all_stations, build_xgboost_dataset, build_lstm_dataset
 from config import THRESHOLD, XGB_PARAMS
 
 HORIZON    = 72
-IMAGES_DIR = os.path.join(os.path.dirname(__file__), '..', 'images', 'test 2')
-COLORS     = ['steelblue', 'darkorange', 'green']
+IMAGES_ROOT = os.path.join(os.path.abspath(os.path.dirname(__file__)), '..', 'images')
+COLORS      = ['steelblue', 'darkorange', 'green']
 
-os.makedirs(IMAGES_DIR, exist_ok=True)
 
-# Test 1 reference metrics (no weather, t+24h) for delta comparison
-TEST1 = {
-    'Random Forest': {'MAE': 0.0090, 'RMSE': 0.0175, 'R2': 0.9595},
-    'XGBoost':       {'MAE': 0.0081, 'RMSE': 0.0171, 'R2': 0.9612},
-    'LSTM':          {'MAE': 0.0096, 'RMSE': 0.0235, 'R2': 0.9308},
-    'Persistence':   {'MAE': 0.0120, 'R2':   0.9261},
-}
+def _next_test_name():
+    existing = [
+        d for d in os.listdir(IMAGES_ROOT)
+        if os.path.isdir(os.path.join(IMAGES_ROOT, d)) and d.startswith('test ')
+    ]
+    nums = []
+    for d in existing:
+        try:
+            nums.append(int(d.split(' ')[1]))
+        except (IndexError, ValueError):
+            pass
+    n = max(nums) + 1 if nums else 1
+    return f"test {n}"
 
 
 def classification_metrics(y_true, y_pred):
     actual = (y_true < THRESHOLD).astype(int)
     pred   = (y_pred < THRESHOLD).astype(int)
     score  = 1 - y_pred
-    fpr, tpr, _   = roc_curve(actual, score)
-    prec, rec, _  = precision_recall_curve(actual, score)
+    fpr, tpr, _  = roc_curve(actual, score)
+    prec, rec, _ = precision_recall_curve(actual, score)
     return {
         'recall':    recall_score(actual, pred),
         'precision': precision_score(actual, pred),
@@ -63,6 +70,32 @@ def classification_metrics(y_true, y_pred):
         'cm':  confusion_matrix(actual, pred),
     }
 
+
+def load_all_metrics():
+    """Load metrics.csv from every previous test folder for comparison."""
+    rows = []
+    for d in sorted(os.listdir(IMAGES_ROOT)):
+        path = os.path.join(IMAGES_ROOT, d, 'metrics.csv')
+        if os.path.exists(path):
+            df = pd.read_csv(path)
+            df.insert(0, 'Test', d)
+            rows.append(df)
+    return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+parser = argparse.ArgumentParser()
+parser.add_argument('name', nargs='?', default=None, help='Experiment name (defaults to next test number)')
+args = parser.parse_args()
+
+RUN_NAME   = args.name or _next_test_name()
+IMAGES_DIR = os.path.join(IMAGES_ROOT, RUN_NAME)
+os.makedirs(IMAGES_DIR, exist_ok=True)
+
+print(f'\n{"="*60}')
+print(f'Run: {RUN_NAME}')
+print(f'Output: images/{RUN_NAME}/')
+print(f'{"="*60}\n')
 
 # ── load data ─────────────────────────────────────────────────────────────────
 print('Loading data with weather features...')
@@ -91,7 +124,7 @@ y_train_seq, y_test_seq = y_seq[:sp], y_seq[sp:]
 print(f'  Sequence dataset: {X_seq.shape}')
 
 # ── train models ──────────────────────────────────────────────────────────────
-print('\nTraining Random Forest (t+72h, with weather)...')
+print(f'\nTraining Random Forest (t+{HORIZON}h, with weather)...')
 rf = RandomForestRegressor(n_estimators=200, max_depth=10, max_features='sqrt',
                            random_state=0, n_jobs=-1)
 rf.fit(X_train, y_train)
@@ -100,7 +133,7 @@ del X_train
 gc.collect()
 print('  done')
 
-print('Training XGBoost (t+72h, with weather)...')
+print(f'Training XGBoost (t+{HORIZON}h, with weather)...')
 xgb = XGBRegressor(**XGB_PARAMS)
 xgb.fit(X[:split], y[:split])
 y_pred_xgb = xgb.predict(X_test)
@@ -108,7 +141,7 @@ del X, y
 gc.collect()
 print('  done')
 
-print('Training LSTM (t+72h)...')
+print(f'Training LSTM (t+{HORIZON}h)...')
 lstm = keras.Sequential([
     keras.Input(shape=(X_train_seq.shape[1], 1)),
     layers.LSTM(64, return_sequences=True),
@@ -134,10 +167,10 @@ models = {
     'LSTM':          (y_test_seq, y_pred_lstm),
 }
 
-# ── metrics table ─────────────────────────────────────────────────────────────
-print('\n' + '='*65)
-print('METRICS — Test 2 (weather features, t+72h)')
-print('='*65)
+# ── metrics ───────────────────────────────────────────────────────────────────
+print(f'\n{"="*65}')
+print(f'METRICS — {RUN_NAME}')
+print(f'{"="*65}')
 
 rows = []
 for name, (y_true, y_pred) in models.items():
@@ -146,21 +179,25 @@ for name, (y_true, y_pred) in models.items():
     rmse = mean_squared_error(y_true, y_pred) ** 0.5
     r2   = r2_score(y_true, y_pred)
     rows.append({
-        'Model': name, 'Horizon': 't+72h', 'Features': 'weather+lag',
+        'Model': name, 'Horizon': f't+{HORIZON}h', 'Features': 'weather+lag',
         'MAE': round(mae, 4), 'RMSE': round(rmse, 4), 'R²': round(r2, 4),
         'Recall': round(cm['recall'], 3), 'ROC AUC': round(cm['roc_auc'], 3),
     })
-    t1        = TEST1.get(name, {})
-    mae_delta = f"({mae - t1['MAE']:+.4f})" if t1.get('MAE') else ''
-    r2_delta  = f"({r2  - t1['R2']:+.4f})"  if t1.get('R2')  else ''
-    print(f"  {name:<20} MAE={mae:.4f} {mae_delta:<12} R²={r2:.4f} {r2_delta:<12} Recall={cm['recall']:.3f}  ROC AUC={cm['roc_auc']:.3f}")
+    print(f"  {name:<20} MAE={mae:.4f}  R²={r2:.4f}  Recall={cm['recall']:.3f}  ROC AUC={cm['roc_auc']:.3f}")
 
 p_mae = mean_absolute_error(y_test, y_persist)
 p_r2  = r2_score(y_test, y_persist)
-print(f"  {'Persistence':<20} MAE={p_mae:.4f} ({p_mae - TEST1['Persistence']['MAE']:+.4f} vs t+24h)  R²={p_r2:.4f} ({p_r2 - TEST1['Persistence']['R2']:+.4f} vs t+24h)")
+print(f"  {'Persistence':<20} MAE={p_mae:.4f}  R²={p_r2:.4f}")
 
 pd.DataFrame(rows).to_csv(os.path.join(IMAGES_DIR, 'metrics.csv'), index=False)
-print(f'\nMetrics saved to images/test 2/metrics.csv')
+
+# ── progression comparison ────────────────────────────────────────────────────
+all_metrics = load_all_metrics()
+if not all_metrics.empty:
+    print(f'\n{"="*65}')
+    print('PROGRESSION ACROSS ALL TESTS')
+    print(f'{"="*65}')
+    print(all_metrics[['Test', 'Model', 'MAE', 'R²', 'Recall', 'ROC AUC']].to_string(index=False))
 
 # ── plots ─────────────────────────────────────────────────────────────────────
 print('\nGenerating plots...')
@@ -174,7 +211,7 @@ for ax, (name, (y_true, y_pred)), color in zip(axes, models.items(), COLORS):
     ax.set_ylabel('True Positive Rate')
     ax.set_title(f'ROC — {name}')
     ax.legend()
-plt.suptitle('ROC Curves — Test 2 (weather features, t+72h)')
+plt.suptitle(f'ROC Curves — {RUN_NAME}')
 plt.tight_layout()
 plt.savefig(os.path.join(IMAGES_DIR, 'roc_curves.png'), dpi=150, bbox_inches='tight')
 plt.close()
@@ -188,7 +225,7 @@ for ax, (name, (y_true, y_pred)), color in zip(axes, models.items(), COLORS):
     ax.set_ylabel('Precision')
     ax.set_title(f'Precision-Recall — {name}')
     ax.legend()
-plt.suptitle('Precision-Recall Curves — Test 2 (weather features, t+72h)')
+plt.suptitle(f'Precision-Recall Curves — {RUN_NAME}')
 plt.tight_layout()
 plt.savefig(os.path.join(IMAGES_DIR, 'precision_recall.png'), dpi=150, bbox_inches='tight')
 plt.close()
@@ -199,7 +236,7 @@ for ax, (name, (y_true, y_pred)) in zip(axes, models.items()):
     cm = classification_metrics(y_true, y_pred)
     ConfusionMatrixDisplay(cm['cm'], display_labels=['Above', 'Below']).plot(ax=ax, colorbar=False)
     ax.set_title(name)
-plt.suptitle(f'Confusion Matrices — Test 2 (threshold={THRESHOLD})')
+plt.suptitle(f'Confusion Matrices — {RUN_NAME} (threshold={THRESHOLD})')
 plt.tight_layout()
 plt.savefig(os.path.join(IMAGES_DIR, 'confusion_matrices.png'), dpi=150, bbox_inches='tight')
 plt.close()
@@ -214,7 +251,7 @@ for ax, (name, (y_true, y_pred)), color in zip(axes, models.items(), COLORS):
     ax.set_xlabel('Actual')
     ax.set_ylabel('Predicted')
     ax.set_title(name)
-plt.suptitle('Predicted vs Actual — Test 2 (weather features, t+72h)')
+plt.suptitle(f'Predicted vs Actual — {RUN_NAME}')
 plt.tight_layout()
 plt.savefig(os.path.join(IMAGES_DIR, 'predicted_vs_actual.png'), dpi=150, bbox_inches='tight')
 plt.close()
@@ -228,7 +265,7 @@ for ax, (name, (y_true, y_pred)), color in zip(axes, models.items(), COLORS):
     ax.set_xlabel('Residual (actual − predicted)')
     ax.set_ylabel('Count')
     ax.set_title(f'{name}  (mean={residuals.mean():.4f})')
-plt.suptitle('Residual Distributions — Test 2 (weather features, t+72h)')
+plt.suptitle(f'Residual Distributions — {RUN_NAME}')
 plt.tight_layout()
 plt.savefig(os.path.join(IMAGES_DIR, 'residuals.png'), dpi=150, bbox_inches='tight')
 plt.close()
@@ -238,7 +275,7 @@ feat_imp = pd.Series(xgb.feature_importances_, index=feature_cols).sort_values(a
 fig, ax = plt.subplots(figsize=(8, 8))
 feat_imp.plot(kind='barh', ax=ax, color='steelblue')
 ax.set_xlabel('Importance')
-ax.set_title('XGBoost Feature Importance (weather features, t+72h)')
+ax.set_title(f'XGBoost Feature Importance — {RUN_NAME}')
 plt.tight_layout()
 plt.savefig(os.path.join(IMAGES_DIR, 'feature_importance.png'), dpi=150, bbox_inches='tight')
 plt.close()
@@ -287,7 +324,7 @@ hr = pd.DataFrame(results)
 hr.to_csv(os.path.join(IMAGES_DIR, 'horizon_comparison.csv'), index=False)
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-ax1.plot(hr['horizon'], hr['persist_mae'],  'k--',          marker='o', label='Persistence')
+ax1.plot(hr['horizon'], hr['persist_mae'],  'k--',               marker='o', label='Persistence')
 ax1.plot(hr['horizon'], hr['xgb_nw_mae'],   color='steelblue',   marker='o', label='XGBoost (no weather)')
 ax1.plot(hr['horizon'], hr['xgb_w_mae'],    color='darkorange',  marker='o', label='XGBoost (with weather)')
 ax1.set_xlabel('Prediction Horizon (hours)')
@@ -295,7 +332,7 @@ ax1.set_ylabel('MAE (m³/m³)')
 ax1.set_title('MAE vs Horizon')
 ax1.legend()
 
-ax2.plot(hr['horizon'], hr['persist_r2'],  'k--',          marker='o', label='Persistence')
+ax2.plot(hr['horizon'], hr['persist_r2'],  'k--',               marker='o', label='Persistence')
 ax2.plot(hr['horizon'], hr['xgb_nw_r2'],   color='steelblue',   marker='o', label='XGBoost (no weather)')
 ax2.plot(hr['horizon'], hr['xgb_w_r2'],    color='darkorange',  marker='o', label='XGBoost (with weather)')
 ax2.set_xlabel('Prediction Horizon (hours)')
@@ -303,12 +340,12 @@ ax2.set_ylabel('R²')
 ax2.set_title('R² vs Horizon')
 ax2.legend()
 
-plt.suptitle('Model Performance vs Prediction Horizon — with and without weather features')
+plt.suptitle(f'Model Performance vs Prediction Horizon — {RUN_NAME}')
 plt.tight_layout()
 plt.savefig(os.path.join(IMAGES_DIR, 'horizon_comparison.png'), dpi=150, bbox_inches='tight')
 plt.close()
 print('  saved horizon_comparison.png')
 
-print(f'\nAll outputs saved to images/test 2/')
+print(f'\nAll outputs saved to images/{RUN_NAME}/')
 print('\nHorizon comparison table:')
 print(hr.to_string(index=False))
