@@ -1,43 +1,82 @@
-# ENGG2112
+# ENGG2112 — Data Farmers
 
 <p align="center">
   <img src="images/datafarmers.png" alt="Team photo" width="700"/>
 </p>
 
-## Data Farmers
-
-A project exploring how machine learning can be used to support better farming decisions.
-
-The main idea is to use soil and environmental data such as moisture, nitrogen, pH, temperature, and rainfall to recommend suitable crops and later support irrigation planning. Images will also be used to analyse the health of crops.
-
-## Project aim
-
-The aim of this project is to build a simple system that can help farmers make more informed decisions about crop choice, crop health and water use.
-
-## What the project currently includes
-
-- initial project planning and team role allocation
-- a proof of concept machine learning model
-- synthetic data generation for early testing
-- model evaluation using standard classification metrics
-- feature importance output for basic interpretation
-
-## Team
-
-- Angus - Domain Researcher
-- James - Project Lead
-- Oscar - ML Engineer
-- Byron - Data Engineer
-
-## Current progress
-
-| Team Member | Role              | Completed                                                                                                                                                                         | Next steps                                                                                                                                                                                          |
-| ----------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Angus**   | Domain Researcher | - Found potential datasets for use in the model <br> - Researched different ML Model types <br> - Brainstormed Potential Outputs, Problems, and Model Types                                                                                                                                  | - Refine understanding of how environmental factors influence crop selection <br> - Validate assumptions used in the model <br> - Assist in selecting the most relevant features from real datasets |
-| **James**   | Project Lead      | - Identified a practical framing for a soil watering assitant <br> - Found reliable public datasets using The City of Melbourne's Soil Sensor historical data readings and the Buerea of Meterology's Clmate Data Online <br>  - refined idea from smart plant helper to soil moisture forecaster                                                                                                                                                                       | - Collate and refine found datasets into real useful and useable data for supervised training of a ML model                                                                                                                                                                                      |
-| **Oscar**   | ML Engineer       | - Built an initial baseline machine learning model <br> - Generated synthetic data for testing <br> - Evaluated model performance using basic metrics                             | - Improve model performance and structure <br> - Implement cross-validation and tuning <br> - Adapt model to work with real-world data <br> - Test implementation of image machine learning         |
-| **Byron**   | Data Engineer     | - Identified relevant factors affecting crop growth (soil, moisture, etc.) <br> - Researched key agricultural concepts and terminology <br> - Investigated potential data sources | - Source and clean a real dataset <br> - Build a reliable data pipeline <br> - Ensure data is formatted correctly for model input                                                                   |
+A machine learning system for soil moisture forecasting to support smarter irrigation decisions. Given historical soil moisture readings and weather data, the system predicts future soil moisture levels up to 7 days ahead and flags when moisture is likely to fall below critical irrigation thresholds.
 
 ---
 
-Overall, the next major milestone is to integrate a real dataset so the system can move beyond testing.
+## Overview
+
+The system trains three models — XGBoost, Random Forest, and LSTM — on real-world sensor data from the ISMN (International Soil Moisture Network) spanning 48 stations across East Africa. Weather features (temperature, humidity, precipitation, solar radiation, wind speed) are sourced from the NASA POWER API and merged per station.
+
+Models are evaluated on regression metrics (MAE, R²) and classification metrics (Recall, ROC AUC) for detecting below-threshold drought stress events. Performance is tracked across prediction horizons from t+24h to t+168h, with and without weather features, to quantify the added value of weather data at each horizon.
+
+---
+
+## Project Structure
+
+```
+data/
+  soil_data/
+    ismn_data/          # ISMN station CSVs (COSMOS, TAHMO networks)
+    clean_ismn.py       # Processes raw ISMN zip files into station CSVs
+  weather_data/
+    stations/           # NASA POWER weather CSVs per station (COSMOS, TAHMO)
+    fetch_weather.py    # Fetches weather data from NASA POWER API
+
+models/
+  config.py             # All shared constants and hyperparameter grids
+  prepare.py            # Data loading and feature engineering
+  train_models.py       # XGBoost, Random Forest, LSTM training functions
+  diagnostics.py        # Feature ablation, leakage checks, horizon comparison
+
+scripts/
+  run_experiment.py     # Full experiment runner — trains all models and saves plots
+
+images/
+  test 1 - baseline no weather t+24h/
+  test 2 - weather features t+72h/
+  test 3 - extended lags 5 day/
+```
+
+---
+
+## Running an Experiment
+
+```bash
+python scripts/run_experiment.py "test 4 - description of change"
+```
+
+Each run saves to a new folder under `images/` containing ROC curves, precision-recall curves, confusion matrices, predicted vs actual plots, residual distributions, feature importance, horizon comparison, and weather impact plots. A progression table comparing all previous runs is printed at the end.
+
+---
+
+## Models
+
+| Model | Approach |
+|---|---|
+| XGBoost | Gradient boosted trees with GroupKFold cross-validation, grid search tuning |
+| Random Forest | Ensemble with GroupKFold cross-validation, grid search tuning |
+| LSTM | Sequence model on raw hourly soil moisture windows |
+
+Features include soil moisture lags (24h–120h), time of day, month, day of year, station latitude/longitude/elevation/depth, and 7 NASA POWER weather variables.
+
+---
+
+## Key Results
+
+Weather features consistently improve performance, with the largest benefit at t+72h–t+120h horizons. XGBoost achieves R²=0.96 at t+24h, degrading to R²=0.79 at t+168h. The persistence baseline (predicting no change from 24h ago) is competitive at very long horizons, confirming the fundamental difficulty of multi-day forecasting.
+
+---
+
+## Team
+
+| Name | Role |
+|---|---|
+| Angus | Domain Researcher |
+| James | Project Lead |
+| Oscar | ML Engineer |
+| Byron | Data Engineer |
