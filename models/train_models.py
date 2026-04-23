@@ -16,7 +16,7 @@ from xgboost import XGBRegressor
 from tensorflow import keras
 from tensorflow.keras import layers
 
-from prepare import load_all_stations, build_xgboost_dataset, build_lstm_dataset, get_feature_cols
+from prepare import load_all_stations, build_xgboost_dataset, build_lstm_dataset, get_feature_cols, station_temporal_split
 from config import THRESHOLD, XGB_PARAM_GRID, RF_PARAM_GRID
 
 
@@ -31,39 +31,39 @@ def _print_metrics(name, y_true, y_pred):
     print(f"F1:        {f1_score(actual, pred):.3f}")
 
 
-def train_xgboost(stations=None, data=None):
+def train_xgboost(stations=None, data=None, horizon=None, with_weather=False):
     if stations is None:
-        stations = load_all_stations()
+        stations = load_all_stations(with_weather=with_weather)
     if data is None:
-        data = build_xgboost_dataset(stations)
-    feature_cols = get_feature_cols()
+        data = build_xgboost_dataset(stations, horizon=horizon, with_weather=with_weather)
+    feature_cols = get_feature_cols(with_weather=with_weather, horizon=horizon)
 
     X      = data[feature_cols].values
     y      = data['target'].values
     groups = data['station'].values
-    split  = int(len(data) * 0.8)
+    train_mask, test_mask = station_temporal_split(data)
 
-    cv_splits = list(GroupKFold(n_splits=5).split(X[:split], y[:split], groups[:split]))
+    cv_splits = list(GroupKFold(n_splits=5).split(X[train_mask], y[train_mask], groups[train_mask]))
     search = GridSearchCV(
         XGBRegressor(random_state=0, tree_method='hist'),
         XGB_PARAM_GRID,
         cv=cv_splits, scoring='neg_mean_absolute_error', n_jobs=-1, verbose=1,
     )
-    search.fit(X[:split], y[:split])
+    search.fit(X[train_mask], y[train_mask])
 
     best   = search.best_estimator_
-    y_pred = best.predict(X[split:])
+    y_pred = best.predict(X[test_mask])
     print(f"Best params: {search.best_params_}")
-    _print_metrics('XGBoost', y[split:], y_pred)
+    _print_metrics('XGBoost', y[test_mask], y_pred)
     return best
 
 
-def train_random_forest(stations=None, data=None):
+def train_random_forest(stations=None, data=None, horizon=None, with_weather=False):
     if stations is None:
-        stations = load_all_stations()
+        stations = load_all_stations(with_weather=with_weather)
     if data is None:
-        data = build_xgboost_dataset(stations)
-    feature_cols = get_feature_cols()
+        data = build_xgboost_dataset(stations, horizon=horizon, with_weather=with_weather)
+    feature_cols = get_feature_cols(with_weather=with_weather, horizon=horizon)
 
     X      = data[feature_cols].values
     y      = data['target'].values
@@ -73,20 +73,23 @@ def train_random_forest(stations=None, data=None):
     idx = rng.choice(len(X), size=min(100_000, len(X)), replace=False)
     idx.sort()
     X, y, groups = X[idx], y[idx], groups[idx]
-    split = int(len(X) * 0.8)
+    # Rebuild a lightweight frame so station_temporal_split can group by station
+    import pandas as pd
+    _df = pd.DataFrame({'station': groups})
+    train_mask, test_mask = station_temporal_split(_df)
 
-    cv_splits = list(GroupKFold(n_splits=5).split(X[:split], y[:split], groups[:split]))
+    cv_splits = list(GroupKFold(n_splits=5).split(X[train_mask], y[train_mask], groups[train_mask]))
     search = GridSearchCV(
         RandomForestRegressor(random_state=0, n_jobs=-1),
         RF_PARAM_GRID,
         cv=cv_splits, scoring='neg_mean_absolute_error', n_jobs=-1, verbose=1,
     )
-    search.fit(X[:split], y[:split])
+    search.fit(X[train_mask], y[train_mask])
 
     best   = search.best_estimator_
-    y_pred = best.predict(X[split:])
+    y_pred = best.predict(X[test_mask])
     print(f"Best params: {search.best_params_}")
-    _print_metrics('Random Forest', y[split:], y_pred)
+    _print_metrics('Random Forest', y[test_mask], y_pred)
     return best
 
 
@@ -132,9 +135,9 @@ def train_lstm(stations=None):
 
 if __name__ == '__main__':
     print('Loading data...')
-    stations = load_all_stations()
-    data     = build_xgboost_dataset(stations)
+    stations = load_all_stations(with_weather=True)
+    data     = build_xgboost_dataset(stations, with_weather=True)
 
-    train_xgboost(stations, data)
-    train_random_forest(stations, data)
+    train_xgboost(stations, data, with_weather=True)
+    train_random_forest(stations, data, with_weather=True)
     train_lstm(stations)

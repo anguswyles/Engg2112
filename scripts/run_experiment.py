@@ -30,7 +30,7 @@ from xgboost import XGBRegressor
 from tensorflow import keras
 from tensorflow.keras import layers
 
-from prepare import load_all_stations, build_xgboost_dataset, build_lstm_dataset, get_feature_cols
+from prepare import load_all_stations, build_xgboost_dataset, build_lstm_dataset, get_feature_cols, station_temporal_split
 from config import THRESHOLD, XGB_PARAMS
 
 HORIZON    = 72
@@ -100,14 +100,14 @@ print(f'{"="*60}\n')
 # ── load data ─────────────────────────────────────────────────────────────────
 print('Loading data with weather features...')
 stations     = load_all_stations(with_weather=True)
-feature_cols = get_feature_cols(with_weather=True)
+feature_cols = get_feature_cols(with_weather=True, horizon=HORIZON)
 
 data  = build_xgboost_dataset(stations, horizon=HORIZON, with_weather=True)
 X     = data[feature_cols].values
 y     = data['target'].values
-split = int(len(data) * 0.8)
-X_train, X_test = X[:split], X[split:]
-y_train, y_test = y[:split], y[split:]
+train_mask, test_mask = station_temporal_split(data)
+X_train, X_test = X[train_mask], X[test_mask]
+y_train, y_test = y[train_mask], y[test_mask]
 print(f'  Tabular dataset: {X.shape}  ({len(feature_cols)} features)')
 
 X_seq, y_seq = build_lstm_dataset(stations, horizon=HORIZON)
@@ -135,7 +135,7 @@ print('  done')
 
 print(f'Training XGBoost (t+{HORIZON}h, with weather)...')
 xgb = XGBRegressor(**XGB_PARAMS)
-xgb.fit(X[:split], y[:split])
+xgb.fit(X[train_mask], y[train_mask])
 y_pred_xgb = xgb.predict(X_test)
 del X, y
 gc.collect()
@@ -159,7 +159,7 @@ del X_train_seq
 gc.collect()
 print('  done')
 
-y_persist = data['sm_lag_72h'].values[split:]
+y_persist = data['sm_lag_72h'].values[test_mask]
 
 models = {
     'Random Forest': (y_test,     y_pred_rf),
@@ -288,40 +288,42 @@ horizons    = [24, 48, 72, 96, 120, 168]
 results     = []
 stations_nw = load_all_stations(with_weather=False)
 stations_w  = load_all_stations(with_weather=True)
-fc_nw       = get_feature_cols(with_weather=False)
-fc_w        = get_feature_cols(with_weather=True)
 
 for h in horizons:
-    data_nw = build_xgboost_dataset(stations_nw, horizon=h)
-    X_nw    = data_nw[fc_nw].values
-    y_nw    = data_nw['target'].values
-    sp_nw   = int(len(X_nw) * 0.8)
-    m_nw    = XGBRegressor(**XGB_PARAMS)
-    m_nw.fit(X_nw[:sp_nw], y_nw[:sp_nw])
-    pred_nw = m_nw.predict(X_nw[sp_nw:])
-    persist = data_nw['sm_lag_24h'].values[sp_nw:]
+    # Feature cols are horizon-specific: weather version adds t+24h…t+h columns
+    fc_nw = get_feature_cols(with_weather=False, horizon=h)
+    fc_w  = get_feature_cols(with_weather=True,  horizon=h)
 
-    data_w = build_xgboost_dataset(stations_w, horizon=h, with_weather=True)
-    X_w    = data_w[fc_w].values
-    y_w    = data_w['target'].values
-    sp_w   = int(len(X_w) * 0.8)
-    m_w    = XGBRegressor(**XGB_PARAMS)
-    m_w.fit(X_w[:sp_w], y_w[:sp_w])
-    pred_w = m_w.predict(X_w[sp_w:])
+    data_nw             = build_xgboost_dataset(stations_nw, horizon=h)
+    X_nw                = data_nw[fc_nw].values
+    y_nw                = data_nw['target'].values
+    tr_nw, te_nw        = station_temporal_split(data_nw)
+    m_nw                = XGBRegressor(**XGB_PARAMS)
+    m_nw.fit(X_nw[tr_nw], y_nw[tr_nw])
+    pred_nw             = m_nw.predict(X_nw[te_nw])
+    persist             = data_nw['sm_lag_24h'].values[te_nw]
 
-    cm_nw = classification_metrics(y_nw[sp_nw:], pred_nw)
-    cm_w  = classification_metrics(y_w[sp_w:],   pred_w)
+    data_w              = build_xgboost_dataset(stations_w, horizon=h, with_weather=True)
+    X_w                 = data_w[fc_w].values
+    y_w                 = data_w['target'].values
+    tr_w, te_w          = station_temporal_split(data_w)
+    m_w                 = XGBRegressor(**XGB_PARAMS)
+    m_w.fit(X_w[tr_w], y_w[tr_w])
+    pred_w              = m_w.predict(X_w[te_w])
+
+    cm_nw = classification_metrics(y_nw[te_nw], pred_nw)
+    cm_w  = classification_metrics(y_w[te_w],   pred_w)
 
     results.append({
         'horizon':        h,
-        'persist_mae':    round(mean_absolute_error(y_nw[sp_nw:], persist), 4),
-        'persist_r2':     round(r2_score(y_nw[sp_nw:], persist), 4),
-        'xgb_nw_mae':     round(mean_absolute_error(y_nw[sp_nw:], pred_nw), 4),
-        'xgb_nw_r2':      round(r2_score(y_nw[sp_nw:], pred_nw), 4),
+        'persist_mae':    round(mean_absolute_error(y_nw[te_nw], persist), 4),
+        'persist_r2':     round(r2_score(y_nw[te_nw], persist), 4),
+        'xgb_nw_mae':     round(mean_absolute_error(y_nw[te_nw], pred_nw), 4),
+        'xgb_nw_r2':      round(r2_score(y_nw[te_nw], pred_nw), 4),
         'xgb_nw_recall':  round(cm_nw['recall'], 4),
         'xgb_nw_roc_auc': round(cm_nw['roc_auc'], 4),
-        'xgb_w_mae':      round(mean_absolute_error(y_w[sp_w:], pred_w), 4),
-        'xgb_w_r2':       round(r2_score(y_w[sp_w:], pred_w), 4),
+        'xgb_w_mae':      round(mean_absolute_error(y_w[te_w], pred_w), 4),
+        'xgb_w_r2':       round(r2_score(y_w[te_w], pred_w), 4),
         'xgb_w_recall':   round(cm_w['recall'], 4),
         'xgb_w_roc_auc':  round(cm_w['roc_auc'], 4),
     })

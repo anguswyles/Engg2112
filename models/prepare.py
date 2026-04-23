@@ -50,10 +50,45 @@ def load_all_stations(with_weather=False):
     return stations
 
 
-def get_feature_cols(with_weather=False):
+def station_temporal_split(data, train_frac=0.8):
+    """
+    Split each station's rows independently at train_frac by chronological
+    order, rather than cutting the globally-sorted dataframe in one place.
+
+    Because build_xgboost_dataset ends with sort_index(), each station's rows
+    already appear in time order within the combined frame, so the first
+    train_frac positions for each station are always the earliest readings.
+
+    Returns boolean arrays (train_mask, test_mask) of length len(data).
+    """
+    n          = len(data)
+    train_mask = np.zeros(n, dtype=bool)
+    positions  = np.arange(n)
+    stations   = data['station'].values
+    for station in np.unique(stations):
+        pos = positions[stations == station]
+        sp  = int(len(pos) * train_frac)
+        train_mask[pos[:sp]] = True
+    return train_mask, ~train_mask
+
+
+def get_feature_cols(with_weather=False, horizon=None):
+    """
+    Return the feature column list for the tabular (XGBoost/RF) dataset.
+
+    When with_weather=True the current-time weather columns are included, plus
+    one set of forward-shifted weather columns per 24-hour step up to the
+    prediction horizon (e.g. horizon=72 → t+24h and t+48h and t+72h windows).
+    This mirrors treating observed future weather as a stand-in for a perfect
+    weather forecast over the prediction window.
+    """
+    h    = horizon or HORIZON
+    cols = list(FEATURE_COLS_BASE)
     if with_weather:
-        return FEATURE_COLS_BASE + WEATHER_COLS
-    return FEATURE_COLS_BASE
+        cols += list(WEATHER_COLS)
+        for step in range(24, h + 1, 24):
+            cols += [f'{c}_t+{step}h' for c in WEATHER_COLS]
+    return cols
 
 
 def build_xgboost_dataset(stations, horizon=None, with_weather=False):
@@ -69,6 +104,12 @@ def build_xgboost_dataset(stations, horizon=None, with_weather=False):
         feat['hour']      = feat.index.hour
         feat['month']     = feat.index.month
         feat['dayofyear'] = feat.index.dayofyear
+        # Forward weather windows: give the model observed weather for each
+        # 24-hour day between t and t+horizon, simulating a perfect forecast.
+        if with_weather:
+            for step in range(24, h + 1, 24):
+                for col in WEATHER_COLS:
+                    feat[f'{col}_t+{step}h'] = feat[col].shift(-step)
         for k, v in meta.items():
             feat[k] = v
         feat['station'] = key

@@ -16,7 +16,7 @@ import numpy as np
 from sklearn.metrics import mean_absolute_error, r2_score
 from xgboost import XGBRegressor
 
-from prepare import load_all_stations, build_xgboost_dataset, get_feature_cols
+from prepare import load_all_stations, build_xgboost_dataset, get_feature_cols, station_temporal_split
 from config import XGB_PARAMS
 
 
@@ -34,41 +34,39 @@ def check_leakage():
     X      = data[feature_cols].values
     X_nl   = data[no_leak_cols].values
     y      = data['target'].values
-    split  = int(len(X) * 0.8)
-
-    y_train, y_test = y[:split], y[split:]
+    train_mask, test_mask = station_temporal_split(data)
 
     m = _xgb()
-    m.fit(X[:split], y_train)
+    m.fit(X[train_mask], y[train_mask])
     print('\n--- With sm_value (potential leak) ---')
-    print(f"Train MAE: {mean_absolute_error(y_train, m.predict(X[:split])):.4f}  R²: {r2_score(y_train, m.predict(X[:split])):.4f}")
-    print(f"Test  MAE: {mean_absolute_error(y_test,  m.predict(X[split:])):.4f}  R²: {r2_score(y_test,  m.predict(X[split:])):.4f}")
+    print(f"Train MAE: {mean_absolute_error(y[train_mask], m.predict(X[train_mask])):.4f}  R²: {r2_score(y[train_mask], m.predict(X[train_mask])):.4f}")
+    print(f"Test  MAE: {mean_absolute_error(y[test_mask],  m.predict(X[test_mask])):.4f}  R²: {r2_score(y[test_mask],  m.predict(X[test_mask])):.4f}")
 
     m2 = _xgb()
-    m2.fit(X_nl[:split], y_train)
+    m2.fit(X_nl[train_mask], y[train_mask])
     print('\n--- Without sm_value (lag features only) ---')
-    print(f"Train MAE: {mean_absolute_error(y_train, m2.predict(X_nl[:split])):.4f}  R²: {r2_score(y_train, m2.predict(X_nl[:split])):.4f}")
-    print(f"Test  MAE: {mean_absolute_error(y_test,  m2.predict(X_nl[split:])):.4f}  R²: {r2_score(y_test,  m2.predict(X_nl[split:])):.4f}")
+    print(f"Train MAE: {mean_absolute_error(y[train_mask], m2.predict(X_nl[train_mask])):.4f}  R²: {r2_score(y[train_mask], m2.predict(X_nl[train_mask])):.4f}")
+    print(f"Test  MAE: {mean_absolute_error(y[test_mask],  m2.predict(X_nl[test_mask])):.4f}  R²: {r2_score(y[test_mask],  m2.predict(X_nl[test_mask])):.4f}")
 
 
 def feature_ablation():
     stations     = load_all_stations()
     data         = build_xgboost_dataset(stations)
     feature_cols = get_feature_cols()
-    y            = data['target'].values
-    split        = int(len(data) * 0.8)
+    y                    = data['target'].values
+    train_mask, test_mask = station_temporal_split(data)
 
     def _eval(X, label):
         m = _xgb()
-        m.fit(X[:split], y[:split])
-        p = m.predict(X[split:])
-        print(f"  {label:<45} MAE={mean_absolute_error(y[split:], p):.4f}  R²={r2_score(y[split:], p):.4f}")
+        m.fit(X[train_mask], y[train_mask])
+        p = m.predict(X[test_mask])
+        print(f"  {label:<45} MAE={mean_absolute_error(y[test_mask], p):.4f}  R²={r2_score(y[test_mask], p):.4f}")
 
     print('\n=== NAIVE BASELINES ===')
-    y_mean = np.full(len(y) - split, y[:split].mean())
-    y_pers = data['sm_lag_24h'].values[split:]
-    print(f"  {'Predict training mean':<45} MAE={mean_absolute_error(y[split:], y_mean):.4f}  R²={r2_score(y[split:], y_mean):.4f}")
-    print(f"  {'Persistence (sm at t-24 as forecast)':<45} MAE={mean_absolute_error(y[split:], y_pers):.4f}  R²={r2_score(y[split:], y_pers):.4f}")
+    y_mean = np.full(test_mask.sum(), y[train_mask].mean())
+    y_pers = data['sm_lag_24h'].values[test_mask]
+    print(f"  {'Predict training mean':<45} MAE={mean_absolute_error(y[test_mask], y_mean):.4f}  R²={r2_score(y[test_mask], y_mean):.4f}")
+    print(f"  {'Persistence (sm at t-24 as forecast)':<45} MAE={mean_absolute_error(y[test_mask], y_pers):.4f}  R²={r2_score(y[test_mask], y_pers):.4f}")
 
     print('\n=== FEATURE ABLATION (temporal split) ===')
     configs = {
@@ -84,7 +82,7 @@ def feature_ablation():
 
     print('\n=== SPLIT STRATEGY (all features) ===')
     X = data[feature_cols].values
-    _eval(X, 'temporal split (80/20)')
+    _eval(X, 'per-station temporal split (80/20)')
 
     all_keys = data['station'].unique()
     rng      = np.random.default_rng(42)
@@ -117,17 +115,17 @@ def horizon_comparison():
         data = build_xgboost_dataset(stations, horizon=horizon)
         X    = data[feature_cols].values
         y    = data['target'].values
-        sp   = int(len(data) * 0.8)
+        train_mask, test_mask = station_temporal_split(data)
 
-        y_persist = data['sm_lag_24h'].values[sp:]
-        p_mae = mean_absolute_error(y[sp:], y_persist)
-        p_r2  = r2_score(y[sp:], y_persist)
+        y_persist = data['sm_lag_24h'].values[test_mask]
+        p_mae = mean_absolute_error(y[test_mask], y_persist)
+        p_r2  = r2_score(y[test_mask], y_persist)
 
         m = _xgb()
-        m.fit(X[:sp], y[:sp])
-        pred  = m.predict(X[sp:])
-        m_mae = mean_absolute_error(y[sp:], pred)
-        m_r2  = r2_score(y[sp:], pred)
+        m.fit(X[train_mask], y[train_mask])
+        pred  = m.predict(X[test_mask])
+        m_mae = mean_absolute_error(y[test_mask], pred)
+        m_r2  = r2_score(y[test_mask], pred)
 
         print(f"  {f't+{horizon}h':<10} {p_mae:>16.4f} {p_r2:>15.4f} {m_mae:>12.4f} {m_r2:>11.4f}")
 
