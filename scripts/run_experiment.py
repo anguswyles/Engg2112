@@ -30,12 +30,12 @@ from xgboost import XGBRegressor
 from tensorflow import keras
 from tensorflow.keras import layers
 
-from prepare import load_all_stations, build_xgboost_dataset, build_lstm_dataset, get_feature_cols, station_temporal_split
+from prepare import load_all_stations, build_xgboost_dataset, build_lstm_dataset, build_tft_dataset, get_feature_cols, station_temporal_split
 from config import THRESHOLD, XGB_PARAMS
 
 HORIZON    = 72
 IMAGES_ROOT = os.path.join(os.path.abspath(os.path.dirname(__file__)), '..', 'images')
-COLORS      = ['steelblue', 'darkorange', 'green']
+COLORS      = ['steelblue', 'darkorange', 'green', 'purple']
 
 
 def _next_test_name():
@@ -83,6 +83,43 @@ def load_all_metrics():
     return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
 
 
+def _build_tft(seq_len, n_static):
+    """
+    TFT-inspired Keras model.
+    Static features are broadcast and concatenated at each timestep so the LSTM
+    sees station context at every step. Multi-head self-attention + gated residual
+    then captures temporal dependencies before a dense output head.
+    """
+    seq_in = keras.Input(shape=(seq_len, 1), name='sequence')
+    sta_in = keras.Input(shape=(n_static,),  name='static')
+
+    # Static covariate encoder
+    s = layers.Dense(16, activation='elu')(sta_in)
+    s = layers.Dense(16)(s)
+
+    # Broadcast static embedding across every timestep and concatenate
+    s_exp = layers.RepeatVector(seq_len)(s)                    # (batch, seq, 16)
+    x = layers.Concatenate(axis=-1)([seq_in, s_exp])           # (batch, seq, 17)
+
+    # Temporal LSTM
+    x = layers.LSTM(64, return_sequences=True)(x)
+
+    # Multi-head temporal self-attention
+    a = layers.MultiHeadAttention(num_heads=4, key_dim=16)(x, x)
+
+    # Gated residual connection (simplified GLU)
+    g = layers.Dense(64, activation='sigmoid')(a)
+    x = layers.Add()([layers.Multiply()([g, a]), x])
+    x = layers.LayerNormalization()(x)
+
+    # Use the last timestep — carries full sequence history
+    x   = layers.Lambda(lambda t: t[:, -1, :])(x)
+    x   = layers.Dense(16, activation='relu')(x)
+    out = layers.Dense(1)(x)
+
+    return keras.Model(inputs=[seq_in, sta_in], outputs=out)
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 parser = argparse.ArgumentParser()
 parser.add_argument('name', nargs='?', default=None, help='Experiment name (defaults to next test number)')
@@ -123,6 +160,22 @@ X_test_seq  = X_norm[sp:].reshape(-1, X_seq.shape[1], 1)
 y_train_seq, y_test_seq = y_seq[:sp], y_seq[sp:]
 print(f'  Sequence dataset: {X_seq.shape}')
 
+X_tft, X_static, y_tft = build_tft_dataset(stations, horizon=HORIZON)
+rng2  = np.random.default_rng(1)
+idx2  = rng2.choice(len(X_tft), size=min(100_000, len(X_tft)), replace=False)
+idx2.sort()
+X_tft, X_static, y_tft = X_tft[idx2], X_static[idx2], y_tft[idx2]
+X_tft_mean, X_tft_std  = X_tft.mean(), X_tft.std()
+X_tft_norm             = (X_tft - X_tft_mean) / X_tft_std
+X_static_norm          = (X_static - X_static.mean(axis=0)) / (X_static.std(axis=0) + 1e-8)
+sp3 = int(len(X_tft) * 0.8)
+X_train_tft    = X_tft_norm[:sp3].reshape(-1, X_tft.shape[1], 1)
+X_test_tft     = X_tft_norm[sp3:].reshape(-1, X_tft.shape[1], 1)
+X_train_static = X_static_norm[:sp3]
+X_test_static  = X_static_norm[sp3:]
+y_train_tft, y_test_tft = y_tft[:sp3], y_tft[sp3:]
+print(f'  TFT dataset:      {X_tft.shape}')
+
 # ── train models ──────────────────────────────────────────────────────────────
 print(f'\nTraining Random Forest (t+{HORIZON}h, with weather)...')
 rf = RandomForestRegressor(n_estimators=200, max_depth=10, max_features='sqrt',
@@ -159,12 +212,28 @@ del X_train_seq
 gc.collect()
 print('  done')
 
+print(f'Training TFT (t+{HORIZON}h)...')
+tft = _build_tft(X_train_tft.shape[1], X_train_static.shape[1])
+tft.compile(optimizer='adam', loss='mae')
+tft.fit(
+    [X_train_tft, X_train_static], y_train_tft,
+    epochs=20, batch_size=512, validation_split=0.1,
+    callbacks=[keras.callbacks.EarlyStopping(monitor='val_loss', patience=3,
+                                              restore_best_weights=True)],
+    verbose=1,
+)
+y_pred_tft = tft.predict([X_test_tft, X_test_static]).flatten()
+del X_train_tft, X_train_static
+gc.collect()
+print('  done')
+
 y_persist = data['sm_lag_72h'].values[test_mask]
 
 models = {
     'Random Forest': (y_test,     y_pred_rf),
     'XGBoost':       (y_test,     y_pred_xgb),
     'LSTM':          (y_test_seq, y_pred_lstm),
+    'TFT':           (y_test_tft, y_pred_tft),
 }
 
 # ── metrics ───────────────────────────────────────────────────────────────────
@@ -202,7 +271,7 @@ if not all_metrics.empty:
 # ── plots ─────────────────────────────────────────────────────────────────────
 print('\nGenerating plots...')
 
-fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+fig, axes = plt.subplots(1, 4, figsize=(20, 5))
 for ax, (name, (y_true, y_pred)), color in zip(axes, models.items(), COLORS):
     cm = classification_metrics(y_true, y_pred)
     ax.plot(cm['fpr'], cm['tpr'], color=color, lw=2, label=f"AUC={cm['roc_auc']:.3f}")
@@ -217,7 +286,7 @@ plt.savefig(os.path.join(IMAGES_DIR, 'roc_curves.png'), dpi=150, bbox_inches='ti
 plt.close()
 print('  saved roc_curves.png')
 
-fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+fig, axes = plt.subplots(1, 4, figsize=(20, 5))
 for ax, (name, (y_true, y_pred)), color in zip(axes, models.items(), COLORS):
     cm = classification_metrics(y_true, y_pred)
     ax.plot(cm['rec'], cm['prec'], color=color, lw=2, label=f"AUC={cm['pr_auc']:.3f}")
@@ -231,7 +300,7 @@ plt.savefig(os.path.join(IMAGES_DIR, 'precision_recall.png'), dpi=150, bbox_inch
 plt.close()
 print('  saved precision_recall.png')
 
-fig, axes = plt.subplots(1, 3, figsize=(14, 4))
+fig, axes = plt.subplots(1, 4, figsize=(18, 4))
 for ax, (name, (y_true, y_pred)) in zip(axes, models.items()):
     cm = classification_metrics(y_true, y_pred)
     ConfusionMatrixDisplay(cm['cm'], display_labels=['Above', 'Below']).plot(ax=ax, colorbar=False)
@@ -242,7 +311,7 @@ plt.savefig(os.path.join(IMAGES_DIR, 'confusion_matrices.png'), dpi=150, bbox_in
 plt.close()
 print('  saved confusion_matrices.png')
 
-fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+fig, axes = plt.subplots(1, 4, figsize=(20, 5))
 for ax, (name, (y_true, y_pred)), color in zip(axes, models.items(), COLORS):
     s = np.random.choice(len(y_true), size=min(5000, len(y_true)), replace=False)
     ax.scatter(y_true[s], y_pred[s], alpha=0.2, s=5, color=color)
@@ -257,7 +326,7 @@ plt.savefig(os.path.join(IMAGES_DIR, 'predicted_vs_actual.png'), dpi=150, bbox_i
 plt.close()
 print('  saved predicted_vs_actual.png')
 
-fig, axes = plt.subplots(1, 3, figsize=(16, 4))
+fig, axes = plt.subplots(1, 4, figsize=(20, 4))
 for ax, (name, (y_true, y_pred)), color in zip(axes, models.items(), COLORS):
     residuals = y_true - y_pred
     ax.hist(residuals, bins=60, color=color, edgecolor='white', linewidth=0.3)

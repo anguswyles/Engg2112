@@ -128,3 +128,22 @@ def build_lstm_dataset(stations, horizon=None):
             all_X.append(sm[i - WINDOW:i])
             all_y.append(sm[i + h - 1])
     return np.array(all_X, dtype=np.float32), np.array(all_y, dtype=np.float32)
+
+
+def build_tft_dataset(stations, horizon=None):
+    """Returns (X_seq, X_static, y) where X_static contains per-station metadata."""
+    h = horizon or HORIZON
+    all_X, all_static, all_y = [], [], []
+    for key, (df, meta) in stations.items():
+        sm = df['sm_value'].dropna().values
+        if len(sm) < WINDOW + h + 10:
+            continue
+        static = np.array([meta['latitude'], meta['longitude'],
+                           meta['elevation_m'], meta['depth_m']], dtype=np.float32)
+        for i in range(WINDOW, len(sm) - h):
+            all_X.append(sm[i - WINDOW:i])
+            all_static.append(static)
+            all_y.append(sm[i + h - 1])
+    return (np.array(all_X, dtype=np.float32),
+            np.array(all_static, dtype=np.float32),
+            np.array(all_y, dtype=np.float32))
