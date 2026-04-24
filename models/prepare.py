@@ -117,33 +117,47 @@ def build_xgboost_dataset(stations, horizon=None, with_weather=False):
     return pd.concat(frames).sort_index()
 
 
-def build_lstm_dataset(stations, horizon=None):
-    h        = horizon or HORIZON
+def build_lstm_dataset(stations, horizon=None, with_weather=False):
+    """Returns (X, y) where X has shape (n, WINDOW, n_features).
+    n_features=1 (sm only) or 8 (sm + 7 weather channels).
+    Daily weather values are forward-filled to hourly resolution.
+    Stations without complete weather data are skipped when with_weather=True.
+    """
+    h = horizon or HORIZON
+    feat_cols = ['sm_value'] + (WEATHER_COLS if with_weather else [])
     all_X, all_y = [], []
     for key, (df, _) in stations.items():
-        sm = df['sm_value'].dropna().values
-        if len(sm) < WINDOW + h + 10:
+        if not all(c in df.columns for c in feat_cols):
             continue
-        for i in range(WINDOW, len(sm) - h):
-            all_X.append(sm[i - WINDOW:i])
-            all_y.append(sm[i + h - 1])
+        arr = df[feat_cols].ffill().bfill().dropna().values.astype(np.float32)
+        if len(arr) < WINDOW + h + 10:
+            continue
+        for i in range(WINDOW, len(arr) - h):
+            all_X.append(arr[i - WINDOW:i])
+            all_y.append(arr[i + h - 1, 0])
     return np.array(all_X, dtype=np.float32), np.array(all_y, dtype=np.float32)
 
 
-def build_tft_dataset(stations, horizon=None):
-    """Returns (X_seq, X_static, y) where X_static contains per-station metadata."""
+def build_tft_dataset(stations, horizon=None, with_weather=False):
+    """Returns (X_seq, X_static, y).
+    X_seq shape: (n, WINDOW, n_features) — same channels as build_lstm_dataset.
+    X_static shape: (n, 4) — per-station lat/lon/elevation/depth.
+    """
     h = horizon or HORIZON
+    feat_cols = ['sm_value'] + (WEATHER_COLS if with_weather else [])
     all_X, all_static, all_y = [], [], []
     for key, (df, meta) in stations.items():
-        sm = df['sm_value'].dropna().values
-        if len(sm) < WINDOW + h + 10:
+        if not all(c in df.columns for c in feat_cols):
+            continue
+        arr = df[feat_cols].ffill().bfill().dropna().values.astype(np.float32)
+        if len(arr) < WINDOW + h + 10:
             continue
         static = np.array([meta['latitude'], meta['longitude'],
                            meta['elevation_m'], meta['depth_m']], dtype=np.float32)
-        for i in range(WINDOW, len(sm) - h):
-            all_X.append(sm[i - WINDOW:i])
+        for i in range(WINDOW, len(arr) - h):
+            all_X.append(arr[i - WINDOW:i])
             all_static.append(static)
-            all_y.append(sm[i + h - 1])
+            all_y.append(arr[i + h - 1, 0])
     return (np.array(all_X, dtype=np.float32),
             np.array(all_static, dtype=np.float32),
             np.array(all_y, dtype=np.float32))

@@ -83,14 +83,14 @@ def load_all_metrics():
     return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
 
 
-def _build_tft(seq_len, n_static):
+def _build_tft(seq_len, n_features, n_static):
     """
     TFT-inspired Keras model.
     Static features are broadcast and concatenated at each timestep so the LSTM
     sees station context at every step. Multi-head self-attention + gated residual
     then captures temporal dependencies before a dense output head.
     """
-    seq_in = keras.Input(shape=(seq_len, 1), name='sequence')
+    seq_in = keras.Input(shape=(seq_len, n_features), name='sequence')
     sta_in = keras.Input(shape=(n_static,),  name='static')
 
     # Static covariate encoder
@@ -147,30 +147,32 @@ X_train, X_test = X[train_mask], X[test_mask]
 y_train, y_test = y[train_mask], y[test_mask]
 print(f'  Tabular dataset: {X.shape}  ({len(feature_cols)} features)')
 
-X_seq, y_seq = build_lstm_dataset(stations, horizon=HORIZON)
+X_seq, y_seq = build_lstm_dataset(stations, horizon=HORIZON, with_weather=True)
 rng  = np.random.default_rng(0)
 idx  = rng.choice(len(X_seq), size=min(100_000, len(X_seq)), replace=False)
 idx.sort()
 X_seq, y_seq  = X_seq[idx], y_seq[idx]
-X_mean, X_std = X_seq.mean(), X_seq.std()
-X_norm = (X_seq - X_mean) / X_std
+X_mean = X_seq.mean(axis=(0, 1), keepdims=True)   # per-channel mean (1,1,8)
+X_std  = X_seq.std(axis=(0, 1), keepdims=True) + 1e-8
+X_norm = (X_seq - X_mean) / X_std                 # shape (n, 120, 8)
 sp     = int(len(X_seq) * 0.8)
-X_train_seq = X_norm[:sp].reshape(-1, X_seq.shape[1], 1)
-X_test_seq  = X_norm[sp:].reshape(-1, X_seq.shape[1], 1)
+X_train_seq = X_norm[:sp]
+X_test_seq  = X_norm[sp:]
 y_train_seq, y_test_seq = y_seq[:sp], y_seq[sp:]
 print(f'  Sequence dataset: {X_seq.shape}')
 
-X_tft, X_static, y_tft = build_tft_dataset(stations, horizon=HORIZON)
+X_tft, X_static, y_tft = build_tft_dataset(stations, horizon=HORIZON, with_weather=True)
 rng2  = np.random.default_rng(1)
 idx2  = rng2.choice(len(X_tft), size=min(100_000, len(X_tft)), replace=False)
 idx2.sort()
 X_tft, X_static, y_tft = X_tft[idx2], X_static[idx2], y_tft[idx2]
-X_tft_mean, X_tft_std  = X_tft.mean(), X_tft.std()
-X_tft_norm             = (X_tft - X_tft_mean) / X_tft_std
-X_static_norm          = (X_static - X_static.mean(axis=0)) / (X_static.std(axis=0) + 1e-8)
+X_tft_mean     = X_tft.mean(axis=(0, 1), keepdims=True)
+X_tft_std      = X_tft.std(axis=(0, 1), keepdims=True) + 1e-8
+X_tft_norm     = (X_tft - X_tft_mean) / X_tft_std     # shape (n, 120, 8)
+X_static_norm  = (X_static - X_static.mean(axis=0)) / (X_static.std(axis=0) + 1e-8)
 sp3 = int(len(X_tft) * 0.8)
-X_train_tft    = X_tft_norm[:sp3].reshape(-1, X_tft.shape[1], 1)
-X_test_tft     = X_tft_norm[sp3:].reshape(-1, X_tft.shape[1], 1)
+X_train_tft    = X_tft_norm[:sp3]
+X_test_tft     = X_tft_norm[sp3:]
 X_train_static = X_static_norm[:sp3]
 X_test_static  = X_static_norm[sp3:]
 y_train_tft, y_test_tft = y_tft[:sp3], y_tft[sp3:]
@@ -196,7 +198,7 @@ print('  done')
 
 print(f'Training LSTM (t+{HORIZON}h)...')
 lstm = keras.Sequential([
-    keras.Input(shape=(X_train_seq.shape[1], 1)),
+    keras.Input(shape=X_train_seq.shape[1:]),
     layers.LSTM(64, return_sequences=True),
     layers.LSTM(32),
     layers.Dense(16, activation='relu'),
@@ -213,7 +215,7 @@ gc.collect()
 print('  done')
 
 print(f'Training TFT (t+{HORIZON}h)...')
-tft = _build_tft(X_train_tft.shape[1], X_train_static.shape[1])
+tft = _build_tft(X_train_tft.shape[1], X_train_tft.shape[2], X_train_static.shape[1])
 tft.compile(optimizer='adam', loss='mae')
 tft.fit(
     [X_train_tft, X_train_static], y_train_tft,
@@ -230,10 +232,10 @@ print('  done')
 y_persist = data['sm_lag_72h'].values[test_mask]
 
 models = {
-    'Random Forest': (y_test,     y_pred_rf),
-    'XGBoost':       (y_test,     y_pred_xgb),
-    'LSTM':          (y_test_seq, y_pred_lstm),
-    'TFT':           (y_test_tft, y_pred_tft),
+    'Random Forest': (y_test,     y_pred_rf,   'weather+lag'),
+    'XGBoost':       (y_test,     y_pred_xgb,  'weather+lag'),
+    'LSTM':          (y_test_seq, y_pred_lstm,  'weather+sequence'),
+    'TFT':           (y_test_tft, y_pred_tft,   'weather+sequence+static'),
 }
 
 # ── metrics ───────────────────────────────────────────────────────────────────
@@ -242,13 +244,13 @@ print(f'METRICS — {RUN_NAME}')
 print(f'{"="*65}')
 
 rows = []
-for name, (y_true, y_pred) in models.items():
+for name, (y_true, y_pred, features) in models.items():
     cm   = classification_metrics(y_true, y_pred)
     mae  = mean_absolute_error(y_true, y_pred)
     rmse = mean_squared_error(y_true, y_pred) ** 0.5
     r2   = r2_score(y_true, y_pred)
     rows.append({
-        'Model': name, 'Horizon': f't+{HORIZON}h', 'Features': 'weather+lag',
+        'Model': name, 'Horizon': f't+{HORIZON}h', 'Features': features,
         'MAE': round(mae, 4), 'RMSE': round(rmse, 4), 'R²': round(r2, 4),
         'Recall': round(cm['recall'], 3), 'ROC AUC': round(cm['roc_auc'], 3),
     })
@@ -272,7 +274,7 @@ if not all_metrics.empty:
 print('\nGenerating plots...')
 
 fig, axes = plt.subplots(1, 4, figsize=(20, 5))
-for ax, (name, (y_true, y_pred)), color in zip(axes, models.items(), COLORS):
+for ax, (name, (y_true, y_pred, _)), color in zip(axes, models.items(), COLORS):
     cm = classification_metrics(y_true, y_pred)
     ax.plot(cm['fpr'], cm['tpr'], color=color, lw=2, label=f"AUC={cm['roc_auc']:.3f}")
     ax.plot([0, 1], [0, 1], 'k--', lw=0.8)
@@ -287,7 +289,7 @@ plt.close()
 print('  saved roc_curves.png')
 
 fig, axes = plt.subplots(1, 4, figsize=(20, 5))
-for ax, (name, (y_true, y_pred)), color in zip(axes, models.items(), COLORS):
+for ax, (name, (y_true, y_pred, _)), color in zip(axes, models.items(), COLORS):
     cm = classification_metrics(y_true, y_pred)
     ax.plot(cm['rec'], cm['prec'], color=color, lw=2, label=f"AUC={cm['pr_auc']:.3f}")
     ax.set_xlabel('Recall')
@@ -301,7 +303,7 @@ plt.close()
 print('  saved precision_recall.png')
 
 fig, axes = plt.subplots(1, 4, figsize=(18, 4))
-for ax, (name, (y_true, y_pred)) in zip(axes, models.items()):
+for ax, (name, (y_true, y_pred, _)) in zip(axes, models.items()):
     cm = classification_metrics(y_true, y_pred)
     ConfusionMatrixDisplay(cm['cm'], display_labels=['Above', 'Below']).plot(ax=ax, colorbar=False)
     ax.set_title(name)
@@ -312,7 +314,7 @@ plt.close()
 print('  saved confusion_matrices.png')
 
 fig, axes = plt.subplots(1, 4, figsize=(20, 5))
-for ax, (name, (y_true, y_pred)), color in zip(axes, models.items(), COLORS):
+for ax, (name, (y_true, y_pred, _)), color in zip(axes, models.items(), COLORS):
     s = np.random.choice(len(y_true), size=min(5000, len(y_true)), replace=False)
     ax.scatter(y_true[s], y_pred[s], alpha=0.2, s=5, color=color)
     lims = [min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())]
@@ -327,7 +329,7 @@ plt.close()
 print('  saved predicted_vs_actual.png')
 
 fig, axes = plt.subplots(1, 4, figsize=(20, 4))
-for ax, (name, (y_true, y_pred)), color in zip(axes, models.items(), COLORS):
+for ax, (name, (y_true, y_pred, _)), color in zip(axes, models.items(), COLORS):
     residuals = y_true - y_pred
     ax.hist(residuals, bins=60, color=color, edgecolor='white', linewidth=0.3)
     ax.axvline(0, color='black', linestyle='--', linewidth=0.8)
