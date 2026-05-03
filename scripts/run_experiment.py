@@ -152,10 +152,10 @@ rng  = np.random.default_rng(0)
 idx  = rng.choice(len(X_seq), size=min(100_000, len(X_seq)), replace=False)
 idx.sort()
 X_seq, y_seq  = X_seq[idx], y_seq[idx]
-X_mean = X_seq.mean(axis=(0, 1), keepdims=True)   # per-channel mean (1,1,8)
-X_std  = X_seq.std(axis=(0, 1), keepdims=True) + 1e-8
-X_norm = (X_seq - X_mean) / X_std                 # shape (n, 120, 8)
 sp     = int(len(X_seq) * 0.8)
+X_mean = X_seq[:sp].mean(axis=(0, 1), keepdims=True)   # computed on train only
+X_std  = X_seq[:sp].std(axis=(0, 1), keepdims=True) + 1e-8
+X_norm = (X_seq - X_mean) / X_std
 X_train_seq = X_norm[:sp]
 X_test_seq  = X_norm[sp:]
 y_train_seq, y_test_seq = y_seq[:sp], y_seq[sp:]
@@ -166,11 +166,12 @@ rng2  = np.random.default_rng(1)
 idx2  = rng2.choice(len(X_tft), size=min(100_000, len(X_tft)), replace=False)
 idx2.sort()
 X_tft, X_static, y_tft = X_tft[idx2], X_static[idx2], y_tft[idx2]
-X_tft_mean     = X_tft.mean(axis=(0, 1), keepdims=True)
-X_tft_std      = X_tft.std(axis=(0, 1), keepdims=True) + 1e-8
-X_tft_norm     = (X_tft - X_tft_mean) / X_tft_std     # shape (n, 120, 8)
-X_static_norm  = (X_static - X_static.mean(axis=0)) / (X_static.std(axis=0) + 1e-8)
 sp3 = int(len(X_tft) * 0.8)
+X_tft_mean     = X_tft[:sp3].mean(axis=(0, 1), keepdims=True)   # computed on train only
+X_tft_std      = X_tft[:sp3].std(axis=(0, 1), keepdims=True) + 1e-8
+X_tft_norm     = (X_tft - X_tft_mean) / X_tft_std
+X_static_norm  = ((X_static - X_static[:sp3].mean(axis=0))
+                  / (X_static[:sp3].std(axis=0) + 1e-8))
 X_train_tft    = X_tft_norm[:sp3]
 X_test_tft     = X_tft_norm[sp3:]
 X_train_static = X_static_norm[:sp3]
@@ -200,7 +201,9 @@ print(f'Training LSTM (t+{HORIZON}h)...')
 lstm = keras.Sequential([
     keras.Input(shape=X_train_seq.shape[1:]),
     layers.LSTM(64, return_sequences=True),
+    layers.Dropout(0.2),
     layers.LSTM(32),
+    layers.Dropout(0.2),
     layers.Dense(16, activation='relu'),
     layers.Dense(1),
 ])

@@ -7,7 +7,7 @@ _here = os.path.dirname(os.path.abspath(__file__))
 if _here not in sys.path:
     sys.path.insert(0, _here)
 
-from config import LAGS, HORIZON, WINDOW, WEATHER_COLS, FEATURE_COLS_BASE
+from config import LAGS, HORIZON, WINDOW, WEATHER_COLS, DERIVED_WEATHER_COLS, FEATURE_COLS_BASE
 
 DATA_DIR    = os.path.join(_here, '..', 'data', 'soil_data', 'ismn_data')
 WEATHER_DIR = os.path.join(_here, '..', 'data', 'weather_data', 'stations')
@@ -45,6 +45,10 @@ def load_all_stations(with_weather=False):
                     df['date'] = df.index.normalize()
                     df = df.merge(w[WEATHER_COLS], left_on='date', right_index=True, how='left')
                     df = df.drop(columns='date')
+                    # Hargreaves-Samani reference evapotranspiration (mm/day)
+                    trange = (df['T2M_MAX'] - df['T2M_MIN']).clip(lower=0)
+                    df['ET0'] = (0.0023 * (df['ALLSKY_SFC_SW_DWN'] / 0.408)
+                                 * (df['T2M'] + 17.8) * np.sqrt(trange))
 
             stations[f"{network}/{f[:-4]}"] = (df, meta)
     return stations
@@ -82,12 +86,13 @@ def get_feature_cols(with_weather=False, horizon=None):
     This mirrors treating observed future weather as a stand-in for a perfect
     weather forecast over the prediction window.
     """
-    h    = horizon or HORIZON
-    cols = list(FEATURE_COLS_BASE)
+    h            = horizon or HORIZON
+    cols         = list(FEATURE_COLS_BASE)
+    all_wx_cols  = list(WEATHER_COLS) + list(DERIVED_WEATHER_COLS)
     if with_weather:
-        cols += list(WEATHER_COLS)
+        cols += all_wx_cols
         for step in range(24, h + 1, 24):
-            cols += [f'{c}_t+{step}h' for c in WEATHER_COLS]
+            cols += [f'{c}_t+{step}h' for c in all_wx_cols]
     return cols
 
 
@@ -101,6 +106,9 @@ def build_xgboost_dataset(stations, horizon=None, with_weather=False):
         feat['target'] = feat['sm_value'].shift(-h)
         for lag in LAGS:
             feat[f'sm_lag_{lag}h'] = feat['sm_value'].shift(lag)
+        for w in (72, 168):
+            feat[f'sm_rolling_mean_{w}h'] = feat['sm_value'].shift(1).rolling(w).mean()
+            feat[f'sm_rolling_std_{w}h']  = feat['sm_value'].shift(1).rolling(w).std()
         feat['hour']      = feat.index.hour
         feat['month']     = feat.index.month
         feat['dayofyear'] = feat.index.dayofyear
@@ -108,8 +116,9 @@ def build_xgboost_dataset(stations, horizon=None, with_weather=False):
         # 24-hour day between t and t+horizon, simulating a perfect forecast.
         if with_weather:
             for step in range(24, h + 1, 24):
-                for col in WEATHER_COLS:
-                    feat[f'{col}_t+{step}h'] = feat[col].shift(-step)
+                for col in list(WEATHER_COLS) + list(DERIVED_WEATHER_COLS):
+                    if col in feat.columns:
+                        feat[f'{col}_t+{step}h'] = feat[col].shift(-step)
         for k, v in meta.items():
             feat[k] = v
         feat['station'] = key
@@ -124,7 +133,7 @@ def build_lstm_dataset(stations, horizon=None, with_weather=False):
     Stations without complete weather data are skipped when with_weather=True.
     """
     h = horizon or HORIZON
-    feat_cols = ['sm_value'] + (WEATHER_COLS if with_weather else [])
+    feat_cols = ['sm_value'] + (list(WEATHER_COLS) + list(DERIVED_WEATHER_COLS) if with_weather else [])
     all_X, all_y = [], []
     for key, (df, _) in stations.items():
         if not all(c in df.columns for c in feat_cols):
@@ -144,7 +153,7 @@ def build_tft_dataset(stations, horizon=None, with_weather=False):
     X_static shape: (n, 4) — per-station lat/lon/elevation/depth.
     """
     h = horizon or HORIZON
-    feat_cols = ['sm_value'] + (WEATHER_COLS if with_weather else [])
+    feat_cols = ['sm_value'] + (list(WEATHER_COLS) + list(DERIVED_WEATHER_COLS) if with_weather else [])
     all_X, all_static, all_y = [], [], []
     for key, (df, meta) in stations.items():
         if not all(c in df.columns for c in feat_cols):
