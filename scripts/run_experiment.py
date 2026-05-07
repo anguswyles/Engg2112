@@ -280,6 +280,61 @@ print(f"  {'Persistence':<20} MAE={p_mae:.4f}  R²={p_r2:.4f}")
 
 pd.DataFrame(rows).to_csv(os.path.join(IMAGES_DIR, 'metrics.csv'), index=False)
 
+# ── drought onset analysis ────────────────────────────────────────────────────
+# An "onset event" = currently sm >= THRESHOLD but actual sm at t+h < THRESHOLD.
+# This isolates the agriculturally meaningful case (drought is starting) from
+# the trivial "already dry, stays dry" case that inflates raw recall.
+print(f'\n{"="*65}')
+print(f'DROUGHT ONSET ANALYSIS (currently wet → dry within t+{HORIZON}h)')
+print(f'{"="*65}')
+
+current_sm_tab = data['sm_value'].values[test_mask]
+current_sm_seq = X_test_seq_raw[:, -1, 0]
+current_sm_tft = X_test_tft_raw[:, -1, 0]
+
+onset_inputs = {
+    'Persistence':   (y_test,     y_persist,   current_sm_tab),
+    'Random Forest': (y_test,     y_pred_rf,   current_sm_tab),
+    'XGBoost':       (y_test,     y_pred_xgb,  current_sm_tab),
+    'LSTM':          (y_test_seq, y_pred_lstm, current_sm_seq),
+    'TFT':           (y_test_tft, y_pred_tft,  current_sm_tft),
+}
+
+onset_rows = []
+for name, (y_true, y_pred, current_sm) in onset_inputs.items():
+    currently_wet = current_sm >= THRESHOLD
+    will_drop     = y_true < THRESHOLD
+    pred_drop     = y_pred < THRESHOLD
+
+    onset_mask = currently_wet & will_drop
+    n_onsets   = int(onset_mask.sum())
+    n_caught   = int((onset_mask & pred_drop).sum())
+
+    # False alarm: currently wet, model says drop, but actual stays wet
+    fa_mask  = currently_wet & ~will_drop
+    n_fa     = int((fa_mask & pred_drop).sum())
+    n_safe   = int(fa_mask.sum())
+
+    catch_rate = n_caught / n_onsets if n_onsets else 0.0
+    fa_rate    = n_fa     / n_safe   if n_safe   else 0.0
+    precision  = n_caught / (n_caught + n_fa) if (n_caught + n_fa) else 0.0
+
+    onset_rows.append({
+        'Model': name,
+        'Onsets in test': n_onsets,
+        'Caught': n_caught,
+        'Catch rate': round(catch_rate, 4),
+        'False alarms': n_fa,
+        'Wet stayed wet': n_safe,
+        'False alarm rate': round(fa_rate, 4),
+        'Onset precision': round(precision, 4),
+    })
+    print(f"  {name:<14} onsets={n_onsets:>5}  caught={n_caught:>5} ({catch_rate:.1%})  "
+          f"FA rate={fa_rate:.1%}  precision={precision:.1%}")
+
+pd.DataFrame(onset_rows).to_csv(os.path.join(IMAGES_DIR, 'onset_analysis.csv'), index=False)
+print(f'  saved onset_analysis.csv')
+
 # ── progression comparison ────────────────────────────────────────────────────
 all_metrics = load_all_metrics()
 if not all_metrics.empty:

@@ -1,5 +1,5 @@
 Model,Horizon,Features,MAE,RMSE,R²,Recall,ROC AUC
 Random Forest,t+72h,weather+lag,0.016,0.0263,0.9206,0.978,0.97
 XGBoost,t+72h,weather+lag,0.0149,0.0246,0.9305,0.975,0.974
-LSTM,t+72h,weather+sequence,0.0206,0.0338,0.8926,0.983,0.971
-TFT,t+72h,weather+sequence+static,0.0147,0.0261,0.9357,0.963,0.978
+LSTM,t+72h,weather+sequence,0.0228,0.0315,0.9065,0.942,0.976
+TFT,t+72h,weather+sequence+static,0.0335,0.0486,0.7778,0.932,0.952
