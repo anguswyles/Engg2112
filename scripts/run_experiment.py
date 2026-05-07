@@ -30,7 +30,7 @@ from xgboost import XGBRegressor
 from tensorflow import keras
 from tensorflow.keras import layers
 
-from prepare import load_all_stations, build_xgboost_dataset, build_lstm_dataset, build_tft_dataset, get_feature_cols, station_temporal_split
+from prepare import load_all_stations, build_xgboost_dataset, build_lstm_dataset, build_tft_dataset, get_feature_cols, station_temporal_split, temporal_split_by_station
 from config import THRESHOLD, XGB_PARAMS
 
 HORIZON    = 72
@@ -147,37 +147,52 @@ X_train, X_test = X[train_mask], X[test_mask]
 y_train, y_test = y[train_mask], y[test_mask]
 print(f'  Tabular dataset: {X.shape}  ({len(feature_cols)} features)')
 
-X_seq, y_seq = build_lstm_dataset(stations, horizon=HORIZON, with_weather=True)
-rng  = np.random.default_rng(0)
-idx  = rng.choice(len(X_seq), size=min(100_000, len(X_seq)), replace=False)
-idx.sort()
-X_seq, y_seq  = X_seq[idx], y_seq[idx]
-sp     = int(len(X_seq) * 0.8)
-X_mean = X_seq[:sp].mean(axis=(0, 1), keepdims=True)   # computed on train only
-X_std  = X_seq[:sp].std(axis=(0, 1), keepdims=True) + 1e-8
-X_norm = (X_seq - X_mean) / X_std
-X_train_seq = X_norm[:sp]
-X_test_seq  = X_norm[sp:]
-y_train_seq, y_test_seq = y_seq[:sp], y_seq[sp:]
-print(f'  Sequence dataset: {X_seq.shape}')
+# Sequence (LSTM) dataset — per-station temporal split, then optional train sub-sample
+X_seq, y_seq, seq_keys = build_lstm_dataset(stations, horizon=HORIZON, with_weather=True)
+seq_tr, seq_te = temporal_split_by_station(seq_keys)
+X_train_seq_full, y_train_seq_full = X_seq[seq_tr], y_seq[seq_tr]
+X_test_seq_raw,   y_test_seq       = X_seq[seq_te], y_seq[seq_te]
 
-X_tft, X_static, y_tft = build_tft_dataset(stations, horizon=HORIZON, with_weather=True)
-rng2  = np.random.default_rng(1)
-idx2  = rng2.choice(len(X_tft), size=min(100_000, len(X_tft)), replace=False)
-idx2.sort()
-X_tft, X_static, y_tft = X_tft[idx2], X_static[idx2], y_tft[idx2]
-sp3 = int(len(X_tft) * 0.8)
-X_tft_mean     = X_tft[:sp3].mean(axis=(0, 1), keepdims=True)   # computed on train only
-X_tft_std      = X_tft[:sp3].std(axis=(0, 1), keepdims=True) + 1e-8
-X_tft_norm     = (X_tft - X_tft_mean) / X_tft_std
-X_static_norm  = ((X_static - X_static[:sp3].mean(axis=0))
-                  / (X_static[:sp3].std(axis=0) + 1e-8))
-X_train_tft    = X_tft_norm[:sp3]
-X_test_tft     = X_tft_norm[sp3:]
-X_train_static = X_static_norm[:sp3]
-X_test_static  = X_static_norm[sp3:]
-y_train_tft, y_test_tft = y_tft[:sp3], y_tft[sp3:]
-print(f'  TFT dataset:      {X_tft.shape}')
+# Cap training set at 100k for memory/runtime; keep entire test set for honest eval
+rng = np.random.default_rng(0)
+if len(X_train_seq_full) > 100_000:
+    sub = rng.choice(len(X_train_seq_full), size=100_000, replace=False)
+    sub.sort()
+    X_train_seq_full = X_train_seq_full[sub]
+    y_train_seq_full = y_train_seq_full[sub]
+
+X_mean       = X_train_seq_full.mean(axis=(0, 1), keepdims=True)   # train-only stats
+X_std        = X_train_seq_full.std(axis=(0, 1),  keepdims=True) + 1e-8
+X_train_seq  = (X_train_seq_full - X_mean) / X_std
+X_test_seq   = (X_test_seq_raw   - X_mean) / X_std
+y_train_seq  = y_train_seq_full
+print(f'  Sequence dataset: {X_seq.shape}  train={len(X_train_seq)}  test={len(X_test_seq)}')
+
+# TFT dataset — same per-station temporal split
+X_tft, X_static, y_tft, tft_keys = build_tft_dataset(stations, horizon=HORIZON, with_weather=True)
+tft_tr, tft_te = temporal_split_by_station(tft_keys)
+X_train_tft_full, X_train_static_full, y_train_tft_full = X_tft[tft_tr], X_static[tft_tr], y_tft[tft_tr]
+X_test_tft_raw,   X_test_static_raw,   y_test_tft       = X_tft[tft_te], X_static[tft_te], y_tft[tft_te]
+
+rng2 = np.random.default_rng(1)
+if len(X_train_tft_full) > 100_000:
+    sub2 = rng2.choice(len(X_train_tft_full), size=100_000, replace=False)
+    sub2.sort()
+    X_train_tft_full    = X_train_tft_full[sub2]
+    X_train_static_full = X_train_static_full[sub2]
+    y_train_tft_full    = y_train_tft_full[sub2]
+
+X_tft_mean    = X_train_tft_full.mean(axis=(0, 1), keepdims=True)   # train-only stats
+X_tft_std     = X_train_tft_full.std(axis=(0, 1),  keepdims=True) + 1e-8
+X_train_tft   = (X_train_tft_full - X_tft_mean) / X_tft_std
+X_test_tft    = (X_test_tft_raw   - X_tft_mean) / X_tft_std
+
+stat_mean      = X_train_static_full.mean(axis=0)
+stat_std       = X_train_static_full.std(axis=0) + 1e-8
+X_train_static = (X_train_static_full - stat_mean) / stat_std
+X_test_static  = (X_test_static_raw   - stat_mean) / stat_std
+y_train_tft    = y_train_tft_full
+print(f'  TFT dataset:      {X_tft.shape}  train={len(X_train_tft)}  test={len(X_test_tft)}')
 
 # ── train models ──────────────────────────────────────────────────────────────
 print(f'\nTraining Random Forest (t+{HORIZON}h, with weather)...')

@@ -54,6 +54,24 @@ def load_all_stations(with_weather=False):
     return stations
 
 
+def temporal_split_by_station(stations_arr, train_frac=0.8):
+    """
+    Per-station chronological split primitive. Given an array of station
+    identifiers (one per row/sample, in time order within each station),
+    return boolean train/test masks of the same length where the first
+    train_frac of each station's samples are train and the rest are test.
+    """
+    n          = len(stations_arr)
+    train_mask = np.zeros(n, dtype=bool)
+    positions  = np.arange(n)
+    stations_arr = np.asarray(stations_arr)
+    for station in np.unique(stations_arr):
+        pos = positions[stations_arr == station]
+        sp  = int(len(pos) * train_frac)
+        train_mask[pos[:sp]] = True
+    return train_mask, ~train_mask
+
+
 def station_temporal_split(data, train_frac=0.8):
     """
     Split each station's rows independently at train_frac by chronological
@@ -65,15 +83,7 @@ def station_temporal_split(data, train_frac=0.8):
 
     Returns boolean arrays (train_mask, test_mask) of length len(data).
     """
-    n          = len(data)
-    train_mask = np.zeros(n, dtype=bool)
-    positions  = np.arange(n)
-    stations   = data['station'].values
-    for station in np.unique(stations):
-        pos = positions[stations == station]
-        sp  = int(len(pos) * train_frac)
-        train_mask[pos[:sp]] = True
-    return train_mask, ~train_mask
+    return temporal_split_by_station(data['station'].values, train_frac)
 
 
 def get_feature_cols(with_weather=False, horizon=None):
@@ -127,14 +137,16 @@ def build_xgboost_dataset(stations, horizon=None, with_weather=False):
 
 
 def build_lstm_dataset(stations, horizon=None, with_weather=False):
-    """Returns (X, y) where X has shape (n, WINDOW, n_features).
+    """Returns (X, y, sample_stations) where X has shape (n, WINDOW, n_features).
     n_features=1 (sm only) or 8 (sm + 7 weather channels).
+    sample_stations is a (n,) array of station keys, one per sample, used to
+    apply per-station temporal splits.
     Daily weather values are forward-filled to hourly resolution.
     Stations without complete weather data are skipped when with_weather=True.
     """
     h = horizon or HORIZON
     feat_cols = ['sm_value'] + (list(WEATHER_COLS) + list(DERIVED_WEATHER_COLS) if with_weather else [])
-    all_X, all_y = [], []
+    all_X, all_y, all_keys = [], [], []
     for key, (df, _) in stations.items():
         if not all(c in df.columns for c in feat_cols):
             continue
@@ -144,17 +156,21 @@ def build_lstm_dataset(stations, horizon=None, with_weather=False):
         for i in range(WINDOW, len(arr) - h):
             all_X.append(arr[i - WINDOW:i])
             all_y.append(arr[i + h - 1, 0])
-    return np.array(all_X, dtype=np.float32), np.array(all_y, dtype=np.float32)
+            all_keys.append(key)
+    return (np.array(all_X, dtype=np.float32),
+            np.array(all_y, dtype=np.float32),
+            np.array(all_keys))
 
 
 def build_tft_dataset(stations, horizon=None, with_weather=False):
-    """Returns (X_seq, X_static, y).
+    """Returns (X_seq, X_static, y, sample_stations).
     X_seq shape: (n, WINDOW, n_features) — same channels as build_lstm_dataset.
     X_static shape: (n, 4) — per-station lat/lon/elevation/depth.
+    sample_stations is a (n,) array of station keys, one per sample.
     """
     h = horizon or HORIZON
     feat_cols = ['sm_value'] + (list(WEATHER_COLS) + list(DERIVED_WEATHER_COLS) if with_weather else [])
-    all_X, all_static, all_y = [], [], []
+    all_X, all_static, all_y, all_keys = [], [], [], []
     for key, (df, meta) in stations.items():
         if not all(c in df.columns for c in feat_cols):
             continue
@@ -167,6 +183,8 @@ def build_tft_dataset(stations, horizon=None, with_weather=False):
             all_X.append(arr[i - WINDOW:i])
             all_static.append(static)
             all_y.append(arr[i + h - 1, 0])
+            all_keys.append(key)
     return (np.array(all_X, dtype=np.float32),
             np.array(all_static, dtype=np.float32),
-            np.array(all_y, dtype=np.float32))
+            np.array(all_y, dtype=np.float32),
+            np.array(all_keys))

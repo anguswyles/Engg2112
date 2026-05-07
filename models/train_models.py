@@ -16,7 +16,7 @@ from xgboost import XGBRegressor
 from tensorflow import keras
 from tensorflow.keras import layers
 
-from prepare import load_all_stations, build_xgboost_dataset, build_lstm_dataset, get_feature_cols, station_temporal_split
+from prepare import load_all_stations, build_xgboost_dataset, build_lstm_dataset, get_feature_cols, station_temporal_split, temporal_split_by_station
 from config import THRESHOLD, XGB_PARAM_GRID, RF_PARAM_GRID
 
 
@@ -96,20 +96,24 @@ def train_random_forest(stations=None, data=None, horizon=None, with_weather=Fal
 def train_lstm(stations=None):
     if stations is None:
         stations = load_all_stations()
-    X, y = build_lstm_dataset(stations)
+    X, y, keys = build_lstm_dataset(stations)
 
+    tr, te = temporal_split_by_station(keys)
+    X_tr_full, y_tr_full = X[tr], y[tr]
+    X_te,      y_test    = X[te], y[te]
+
+    # Cap training set; keep entire test set for honest eval
     rng = np.random.default_rng(0)
-    idx = rng.choice(len(X), size=min(100_000, len(X)), replace=False)
-    idx.sort()
-    X, y = X[idx], y[idx]
+    if len(X_tr_full) > 100_000:
+        sub = rng.choice(len(X_tr_full), size=100_000, replace=False)
+        sub.sort()
+        X_tr_full, y_tr_full = X_tr_full[sub], y_tr_full[sub]
 
-    X_mean, X_std = X.mean(), X.std()
-    X_norm = (X - X_mean) / X_std
-    split  = int(len(X) * 0.8)
-
-    X_train = X_norm[:split].reshape(-1, X.shape[1], 1)
-    X_test  = X_norm[split:].reshape(-1, X.shape[1], 1)
-    y_train, y_test = y[:split], y[split:]
+    X_mean = X_tr_full.mean(axis=(0, 1), keepdims=True)   # train-only stats, per channel
+    X_std  = X_tr_full.std(axis=(0, 1),  keepdims=True) + 1e-8
+    X_train = (X_tr_full - X_mean) / X_std
+    X_test  = (X_te      - X_mean) / X_std
+    y_train = y_tr_full
 
     model = keras.Sequential([
         keras.Input(shape=(X_train.shape[1], 1)),
