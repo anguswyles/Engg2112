@@ -83,15 +83,21 @@ def load_all_metrics():
     return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
 
 
-def _build_tft(seq_len, n_features, n_static):
+def _build_tft(seq_len, n_features, n_static, future_steps=None, n_future_wx=None):
     """
     TFT-inspired Keras model.
     Static features are broadcast and concatenated at each timestep so the LSTM
     sees station context at every step. Multi-head self-attention + gated residual
     then captures temporal dependencies before a dense output head.
+
+    When future_steps and n_future_wx are set, adds oracle future weather (t+24h…)
+    as a second input, fused before the output head (same information as XGBoost wx).
     """
     seq_in = keras.Input(shape=(seq_len, n_features), name='sequence')
-    sta_in = keras.Input(shape=(n_static,),  name='static')
+    sta_in = keras.Input(shape=(n_static,), name='static')
+    fut_in = None
+    if future_steps is not None and n_future_wx:
+        fut_in = keras.Input(shape=(future_steps, n_future_wx), name='future_weather')
 
     # Static covariate encoder
     s = layers.Dense(16, activation='elu')(sta_in)
@@ -113,11 +119,32 @@ def _build_tft(seq_len, n_features, n_static):
     x = layers.LayerNormalization()(x)
 
     # Use the last timestep — carries full sequence history
-    x   = layers.Lambda(lambda t: t[:, -1, :])(x)
+    x = layers.Lambda(lambda t: t[:, -1, :])(x)
+    if fut_in is not None:
+        fw = layers.Flatten()(fut_in)
+        fw = layers.Dense(32, activation='elu')(fw)
+        x = layers.Concatenate()([x, fw])
     x   = layers.Dense(16, activation='relu')(x)
     out = layers.Dense(1)(x)
 
-    return keras.Model(inputs=[seq_in, sta_in], outputs=out)
+    inputs = [seq_in, sta_in] if fut_in is None else [seq_in, fut_in, sta_in]
+    return keras.Model(inputs=inputs, outputs=out)
+
+
+def _build_lstm_dual(seq_len, n_features, future_steps, n_future_wx):
+    """LSTM with past sequence + oracle future weather (aligned with tabular models)."""
+    seq_in = keras.Input(shape=(seq_len, n_features), name='sequence')
+    fut_in = keras.Input(shape=(future_steps, n_future_wx), name='future_weather')
+    x = layers.LSTM(64, return_sequences=True)(seq_in)
+    x = layers.Dropout(0.2)(x)
+    x = layers.LSTM(32)(x)
+    x = layers.Dropout(0.2)(x)
+    fw = layers.Flatten()(fut_in)
+    fw = layers.Dense(32, activation='relu')(fw)
+    x = layers.Concatenate()([x, fw])
+    x = layers.Dense(16, activation='relu')(x)
+    out = layers.Dense(1)(x)
+    return keras.Model([seq_in, fut_in], out)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -147,11 +174,11 @@ X_train, X_test = X[train_mask], X[test_mask]
 y_train, y_test = y[train_mask], y[test_mask]
 print(f'  Tabular dataset: {X.shape}  ({len(feature_cols)} features)')
 
-# Sequence (LSTM) dataset — per-station temporal split, then optional train sub-sample
-X_seq, y_seq, seq_keys = build_lstm_dataset(stations, horizon=HORIZON, with_weather=True)
+# Sequence (LSTM) dataset — per-station temporal split + oracle future weather
+X_seq, X_fut_seq, y_seq, seq_keys = build_lstm_dataset(stations, horizon=HORIZON, with_weather=True)
 seq_tr, seq_te = temporal_split_by_station(seq_keys)
-X_train_seq_full, y_train_seq_full = X_seq[seq_tr], y_seq[seq_tr]
-X_test_seq_raw,   y_test_seq       = X_seq[seq_te], y_seq[seq_te]
+X_train_seq_full, X_train_fut_full, y_train_seq_full = X_seq[seq_tr], X_fut_seq[seq_tr], y_seq[seq_tr]
+X_test_seq_raw,   X_test_fut_raw,   y_test_seq       = X_seq[seq_te], X_fut_seq[seq_te], y_seq[seq_te]
 
 # Cap training set at 100k for memory/runtime; keep entire test set for honest eval
 rng = np.random.default_rng(0)
@@ -159,40 +186,51 @@ if len(X_train_seq_full) > 100_000:
     sub = rng.choice(len(X_train_seq_full), size=100_000, replace=False)
     sub.sort()
     X_train_seq_full = X_train_seq_full[sub]
+    X_train_fut_full = X_train_fut_full[sub]
     y_train_seq_full = y_train_seq_full[sub]
 
-X_mean       = X_train_seq_full.mean(axis=(0, 1), keepdims=True)   # train-only stats
-X_std        = X_train_seq_full.std(axis=(0, 1),  keepdims=True) + 1e-8
-X_train_seq  = (X_train_seq_full - X_mean) / X_std
-X_test_seq   = (X_test_seq_raw   - X_mean) / X_std
-y_train_seq  = y_train_seq_full
-print(f'  Sequence dataset: {X_seq.shape}  train={len(X_train_seq)}  test={len(X_test_seq)}')
+X_mean      = X_train_seq_full.mean(axis=(0, 1), keepdims=True)   # train-only stats
+X_std       = X_train_seq_full.std(axis=(0, 1),  keepdims=True) + 1e-8
+X_train_seq = (X_train_seq_full - X_mean) / X_std
+X_test_seq  = (X_test_seq_raw   - X_mean) / X_std
+fut_mean    = X_train_fut_full.mean(axis=(0, 1), keepdims=True)
+fut_std     = X_train_fut_full.std(axis=(0, 1),  keepdims=True) + 1e-8
+X_train_fut = (X_train_fut_full - fut_mean) / fut_std
+X_test_fut  = (X_test_fut_raw   - fut_mean) / fut_std
+y_train_seq = y_train_seq_full
+print(f'  Sequence dataset: {X_seq.shape}  future wx: {X_fut_seq.shape[1:]}  train={len(X_train_seq)}  test={len(X_test_seq)}')
 
-# TFT dataset — same per-station temporal split
-X_tft, X_static, y_tft, tft_keys = build_tft_dataset(stations, horizon=HORIZON, with_weather=True)
+# TFT dataset — per-station temporal split + oracle future weather
+X_tft, X_fut_tft, X_static, y_tft, tft_keys = build_tft_dataset(stations, horizon=HORIZON, with_weather=True)
 tft_tr, tft_te = temporal_split_by_station(tft_keys)
-X_train_tft_full, X_train_static_full, y_train_tft_full = X_tft[tft_tr], X_static[tft_tr], y_tft[tft_tr]
-X_test_tft_raw,   X_test_static_raw,   y_test_tft       = X_tft[tft_te], X_static[tft_te], y_tft[tft_te]
+X_train_tft_full, X_train_fut_tft_full, X_train_static_full, y_train_tft_full = (
+    X_tft[tft_tr], X_fut_tft[tft_tr], X_static[tft_tr], y_tft[tft_tr])
+X_test_tft_raw, X_test_fut_tft_raw, X_test_static_raw, y_test_tft = (
+    X_tft[tft_te], X_fut_tft[tft_te], X_static[tft_te], y_tft[tft_te])
 
 rng2 = np.random.default_rng(1)
 if len(X_train_tft_full) > 100_000:
     sub2 = rng2.choice(len(X_train_tft_full), size=100_000, replace=False)
     sub2.sort()
-    X_train_tft_full    = X_train_tft_full[sub2]
-    X_train_static_full = X_train_static_full[sub2]
-    y_train_tft_full    = y_train_tft_full[sub2]
+    X_train_tft_full     = X_train_tft_full[sub2]
+    X_train_fut_tft_full = X_train_fut_tft_full[sub2]
+    X_train_static_full  = X_train_static_full[sub2]
+    y_train_tft_full     = y_train_tft_full[sub2]
 
-X_tft_mean    = X_train_tft_full.mean(axis=(0, 1), keepdims=True)   # train-only stats
-X_tft_std     = X_train_tft_full.std(axis=(0, 1),  keepdims=True) + 1e-8
-X_train_tft   = (X_train_tft_full - X_tft_mean) / X_tft_std
-X_test_tft    = (X_test_tft_raw   - X_tft_mean) / X_tft_std
-
-stat_mean      = X_train_static_full.mean(axis=0)
-stat_std       = X_train_static_full.std(axis=0) + 1e-8
-X_train_static = (X_train_static_full - stat_mean) / stat_std
-X_test_static  = (X_test_static_raw   - stat_mean) / stat_std
-y_train_tft    = y_train_tft_full
-print(f'  TFT dataset:      {X_tft.shape}  train={len(X_train_tft)}  test={len(X_test_tft)}')
+X_tft_mean     = X_train_tft_full.mean(axis=(0, 1), keepdims=True)   # train-only stats
+X_tft_std      = X_train_tft_full.std(axis=(0, 1),  keepdims=True) + 1e-8
+X_train_tft    = (X_train_tft_full - X_tft_mean) / X_tft_std
+X_test_tft     = (X_test_tft_raw   - X_tft_mean) / X_tft_std
+fut_t_mean     = X_train_fut_tft_full.mean(axis=(0, 1), keepdims=True)
+fut_t_std      = X_train_fut_tft_full.std(axis=(0, 1),  keepdims=True) + 1e-8
+X_train_fut_tft = (X_train_fut_tft_full - fut_t_mean) / fut_t_std
+X_test_fut_tft  = (X_test_fut_tft_raw   - fut_t_mean) / fut_t_std
+stat_mean       = X_train_static_full.mean(axis=0)
+stat_std        = X_train_static_full.std(axis=0) + 1e-8
+X_train_static  = (X_train_static_full - stat_mean) / stat_std
+X_test_static   = (X_test_static_raw   - stat_mean) / stat_std
+y_train_tft     = y_train_tft_full
+print(f'  TFT dataset:      {X_tft.shape}  future wx: {X_fut_tft.shape[1:]}  train={len(X_train_tft)}  test={len(X_test_tft)}')
 
 # ── train models ──────────────────────────────────────────────────────────────
 print(f'\nTraining Random Forest (t+{HORIZON}h, with weather)...')
@@ -213,37 +251,33 @@ gc.collect()
 print('  done')
 
 print(f'Training LSTM (t+{HORIZON}h)...')
-lstm = keras.Sequential([
-    keras.Input(shape=X_train_seq.shape[1:]),
-    layers.LSTM(64, return_sequences=True),
-    layers.Dropout(0.2),
-    layers.LSTM(32),
-    layers.Dropout(0.2),
-    layers.Dense(16, activation='relu'),
-    layers.Dense(1),
-])
+n_fut_s, n_fut_w = X_train_fut.shape[1], X_train_fut.shape[2]
+lstm = _build_lstm_dual(X_train_seq.shape[1], X_train_seq.shape[2], n_fut_s, n_fut_w)
 lstm.compile(optimizer='adam', loss='mae')
-lstm.fit(X_train_seq, y_train_seq, epochs=20, batch_size=512, validation_split=0.1,
+lstm.fit([X_train_seq, X_train_fut], y_train_seq, epochs=20, batch_size=512, validation_split=0.1,
          callbacks=[keras.callbacks.EarlyStopping(monitor='val_loss', patience=3,
                                                    restore_best_weights=True)],
          verbose=1)
-y_pred_lstm = lstm.predict(X_test_seq).flatten()
-del X_train_seq
+y_pred_lstm = lstm.predict([X_test_seq, X_test_fut]).flatten()
+del X_train_seq, X_train_fut
 gc.collect()
 print('  done')
 
 print(f'Training TFT (t+{HORIZON}h)...')
-tft = _build_tft(X_train_tft.shape[1], X_train_tft.shape[2], X_train_static.shape[1])
+tft = _build_tft(
+    X_train_tft.shape[1], X_train_tft.shape[2], X_train_static.shape[1],
+    future_steps=n_fut_s, n_future_wx=n_fut_w,
+)
 tft.compile(optimizer='adam', loss='mae')
 tft.fit(
-    [X_train_tft, X_train_static], y_train_tft,
+    [X_train_tft, X_train_fut_tft, X_train_static], y_train_tft,
     epochs=20, batch_size=512, validation_split=0.1,
     callbacks=[keras.callbacks.EarlyStopping(monitor='val_loss', patience=3,
                                               restore_best_weights=True)],
     verbose=1,
 )
-y_pred_tft = tft.predict([X_test_tft, X_test_static]).flatten()
-del X_train_tft, X_train_static
+y_pred_tft = tft.predict([X_test_tft, X_test_fut_tft, X_test_static]).flatten()
+del X_train_tft, X_train_fut_tft, X_train_static
 gc.collect()
 print('  done')
 
@@ -252,8 +286,8 @@ y_persist = data['sm_lag_72h'].values[test_mask]
 models = {
     'Random Forest': (y_test,     y_pred_rf,   'weather+lag'),
     'XGBoost':       (y_test,     y_pred_xgb,  'weather+lag'),
-    'LSTM':          (y_test_seq, y_pred_lstm,  'weather+sequence'),
-    'TFT':           (y_test_tft, y_pred_tft,   'weather+sequence+static'),
+    'LSTM':          (y_test_seq, y_pred_lstm,  'weather+sequence+future_wx'),
+    'TFT':           (y_test_tft, y_pred_tft,   'weather+sequence+future_wx+static'),
 }
 
 # ── metrics ───────────────────────────────────────────────────────────────────

@@ -13,6 +13,12 @@ DATA_DIR    = os.path.join(_here, '..', 'data', 'soil_data', 'ismn_data')
 WEATHER_DIR = os.path.join(_here, '..', 'data', 'weather_data', 'stations')
 
 
+def future_weather_horizon_steps(horizon):
+    """Match build_xgboost_dataset: oracle wx at t+24h, t+48h, … up to horizon."""
+    h = horizon or HORIZON
+    return list(range(24, h + 1, 24))
+
+
 def load_all_stations(with_weather=False):
     stations = {}
     for network in os.listdir(DATA_DIR):
@@ -137,16 +143,24 @@ def build_xgboost_dataset(stations, horizon=None, with_weather=False):
 
 
 def build_lstm_dataset(stations, horizon=None, with_weather=False):
-    """Returns (X, y, sample_stations) where X has shape (n, WINDOW, n_features).
-    n_features=1 (sm only) or 8 (sm + 7 weather channels).
-    sample_stations is a (n,) array of station keys, one per sample, used to
-    apply per-station temporal splits.
-    Daily weather values are forward-filled to hourly resolution.
-    Stations without complete weather data are skipped when with_weather=True.
+    """Build sequence samples for soil moisture forecasting.
+
+    Without weather: returns (X, y, sample_keys).
+    With weather: returns (X_hist, X_future_wx, y, sample_keys).
+
+    X_hist shape: (n, WINDOW, 1+n_wx) with past soil moisture and weather.
+    X_future_wx shape: (n, n_future_steps, n_wx): oracle weather at t+24h…t+h
+    offsets matching build_xgboost_dataset's shifted columns.
+    sample_keys is a (n,) array of station keys for per-station temporal splits.
     """
     h = horizon or HORIZON
-    feat_cols = ['sm_value'] + (list(WEATHER_COLS) + list(DERIVED_WEATHER_COLS) if with_weather else [])
+    wx_cols = list(WEATHER_COLS) + list(DERIVED_WEATHER_COLS)
+    feat_cols = ['sm_value'] + (wx_cols if with_weather else [])
     all_X, all_y, all_keys = [], [], []
+    all_future = [] if with_weather else None
+    n_wx = len(wx_cols)
+    fut_steps = future_weather_horizon_steps(h) if with_weather else []
+
     for key, (df, _) in stations.items():
         if not all(c in df.columns for c in feat_cols):
             continue
@@ -157,20 +171,38 @@ def build_lstm_dataset(stations, horizon=None, with_weather=False):
             all_X.append(arr[i - WINDOW:i])
             all_y.append(arr[i + h - 1, 0])
             all_keys.append(key)
-    return (np.array(all_X, dtype=np.float32),
-            np.array(all_y, dtype=np.float32),
-            np.array(all_keys))
+            if with_weather:
+                t0 = i - 1
+                fut = np.empty((len(fut_steps), n_wx), dtype=np.float32)
+                for si, step in enumerate(fut_steps):
+                    fut[si] = arr[t0 + step, 1 : 1 + n_wx]
+                all_future.append(fut)
+
+    X = np.array(all_X, dtype=np.float32)
+    y = np.array(all_y, dtype=np.float32)
+    keys = np.array(all_keys)
+    if not with_weather:
+        return X, y, keys
+    return X, np.array(all_future, dtype=np.float32), y, keys
 
 
 def build_tft_dataset(stations, horizon=None, with_weather=False):
-    """Returns (X_seq, X_static, y, sample_stations).
-    X_seq shape: (n, WINDOW, n_features) — same channels as build_lstm_dataset.
-    X_static shape: (n, 4) — per-station lat/lon/elevation/depth.
-    sample_stations is a (n,) array of station keys, one per sample.
+    """Build TFT sequence samples.
+
+    Without weather: returns (X_seq, X_static, y, sample_keys).
+    With weather: returns (X_seq, X_future_wx, X_static, y, sample_keys).
+
+    X_future_wx is oracle weather at t+24h…t+h, aligned with XGBoost.
+    sample_keys is a (n,) array of station keys for per-station temporal splits.
     """
     h = horizon or HORIZON
-    feat_cols = ['sm_value'] + (list(WEATHER_COLS) + list(DERIVED_WEATHER_COLS) if with_weather else [])
+    wx_cols = list(WEATHER_COLS) + list(DERIVED_WEATHER_COLS)
+    feat_cols = ['sm_value'] + (wx_cols if with_weather else [])
     all_X, all_static, all_y, all_keys = [], [], [], []
+    all_future = [] if with_weather else None
+    n_wx = len(wx_cols)
+    fut_steps = future_weather_horizon_steps(h) if with_weather else []
+
     for key, (df, meta) in stations.items():
         if not all(c in df.columns for c in feat_cols):
             continue
@@ -184,7 +216,17 @@ def build_tft_dataset(stations, horizon=None, with_weather=False):
             all_static.append(static)
             all_y.append(arr[i + h - 1, 0])
             all_keys.append(key)
-    return (np.array(all_X, dtype=np.float32),
-            np.array(all_static, dtype=np.float32),
-            np.array(all_y, dtype=np.float32),
-            np.array(all_keys))
+            if with_weather:
+                t0 = i - 1
+                fut = np.empty((len(fut_steps), n_wx), dtype=np.float32)
+                for si, step in enumerate(fut_steps):
+                    fut[si] = arr[t0 + step, 1 : 1 + n_wx]
+                all_future.append(fut)
+
+    X = np.array(all_X, dtype=np.float32)
+    y = np.array(all_y, dtype=np.float32)
+    static_arr = np.array(all_static, dtype=np.float32)
+    keys = np.array(all_keys)
+    if not with_weather:
+        return X, static_arr, y, keys
+    return X, np.array(all_future, dtype=np.float32), static_arr, y, keys
