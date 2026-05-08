@@ -53,22 +53,33 @@ def _next_test_name():
     return f"test {n}"
 
 
-def classification_metrics(y_true, y_pred):
+def classification_metrics(y_true, y_pred, threshold=None):
+    t      = threshold if threshold is not None else THRESHOLD
     actual = (y_true < THRESHOLD).astype(int)
-    pred   = (y_pred < THRESHOLD).astype(int)
+    pred   = (y_pred < t).astype(int)
     score  = 1 - y_pred
     fpr, tpr, _  = roc_curve(actual, score)
     prec, rec, _ = precision_recall_curve(actual, score)
     return {
         'recall':    recall_score(actual, pred),
-        'precision': precision_score(actual, pred),
-        'f1':        f1_score(actual, pred),
+        'precision': precision_score(actual, pred, zero_division=0),
+        'f1':        f1_score(actual, pred, zero_division=0),
         'roc_auc':   auc(fpr, tpr),
         'pr_auc':    auc(rec, prec),
         'fpr': fpr, 'tpr': tpr,
         'prec': prec, 'rec': rec,
         'cm':  confusion_matrix(actual, pred),
     }
+
+
+def optimal_threshold(y_true, y_pred):
+    """Sweep prediction thresholds and return the one that maximises F1."""
+    actual     = (y_true < THRESHOLD).astype(int)
+    thresholds = np.arange(0.05, 0.55, 0.005)
+    f1s        = np.array([f1_score(actual, (y_pred < t).astype(int), zero_division=0)
+                           for t in thresholds])
+    best_idx   = int(np.argmax(f1s))
+    return thresholds[best_idx], f1s[best_idx], thresholds, f1s
 
 
 def load_all_metrics():
@@ -122,7 +133,8 @@ def _build_tft(seq_len, n_features, n_static, future_steps=None, n_future_wx=Non
     x = layers.Lambda(lambda t: t[:, -1, :])(x)
     if fut_in is not None:
         fw = layers.Flatten()(fut_in)
-        fw = layers.Dense(32, activation='elu')(fw)
+        fw = layers.Dense(16, activation='elu')(fw)
+        fw = layers.LayerNormalization()(fw)
         x = layers.Concatenate()([x, fw])
     x   = layers.Dense(16, activation='relu')(x)
     out = layers.Dense(1)(x)
@@ -268,12 +280,16 @@ tft = _build_tft(
     X_train_tft.shape[1], X_train_tft.shape[2], X_train_static.shape[1],
     future_steps=n_fut_s, n_future_wx=n_fut_w,
 )
-tft.compile(optimizer='adam', loss='mae')
+tft.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-4, clipnorm=1.0), loss='mae')
 tft.fit(
     [X_train_tft, X_train_fut_tft, X_train_static], y_train_tft,
-    epochs=20, batch_size=512, validation_split=0.1,
-    callbacks=[keras.callbacks.EarlyStopping(monitor='val_loss', patience=3,
-                                              restore_best_weights=True)],
+    epochs=30, batch_size=512, validation_split=0.1,
+    callbacks=[
+        keras.callbacks.EarlyStopping(monitor='val_loss', patience=5,
+                                      restore_best_weights=True),
+        keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5,
+                                          patience=2, min_lr=1e-6, verbose=0),
+    ],
     verbose=1,
 )
 y_pred_tft = tft.predict([X_test_tft, X_test_fut_tft, X_test_static]).flatten()
@@ -292,7 +308,7 @@ models = {
 
 # ── metrics ───────────────────────────────────────────────────────────────────
 print(f'\n{"="*65}')
-print(f'METRICS — {RUN_NAME}')
+print(f'METRICS - {RUN_NAME}')
 print(f'{"="*65}')
 
 rows = []
@@ -303,23 +319,59 @@ for name, (y_true, y_pred, features) in models.items():
     r2   = r2_score(y_true, y_pred)
     rows.append({
         'Model': name, 'Horizon': f't+{HORIZON}h', 'Features': features,
-        'MAE': round(mae, 4), 'RMSE': round(rmse, 4), 'R²': round(r2, 4),
+        'MAE': round(mae, 4), 'RMSE': round(rmse, 4), 'R2': round(r2, 4),
         'Recall': round(cm['recall'], 3), 'ROC AUC': round(cm['roc_auc'], 3),
     })
-    print(f"  {name:<20} MAE={mae:.4f}  R²={r2:.4f}  Recall={cm['recall']:.3f}  ROC AUC={cm['roc_auc']:.3f}")
+    print(f"  {name:<20} MAE={mae:.4f}  R2={r2:.4f}  Recall={cm['recall']:.3f}  ROC AUC={cm['roc_auc']:.3f}")
 
 p_mae = mean_absolute_error(y_test, y_persist)
 p_r2  = r2_score(y_test, y_persist)
-print(f"  {'Persistence':<20} MAE={p_mae:.4f}  R²={p_r2:.4f}")
+print(f"  {'Persistence':<20} MAE={p_mae:.4f}  R2={p_r2:.4f}")
 
 pd.DataFrame(rows).to_csv(os.path.join(IMAGES_DIR, 'metrics.csv'), index=False)
+
+# ── threshold optimisation ────────────────────────────────────────────────────
+print(f'\n{"="*65}')
+print(f'THRESHOLD OPTIMISATION (maximising F1, fixed drought threshold={THRESHOLD} m3/m3)')
+print(f'{"="*65}')
+print(f'  {"Model":<20} {"Default F1":>10} {"Opt threshold":>13} {"Opt F1":>8}  {"Change":>8}')
+
+thresh_rows = []
+fig_th, axes_th = plt.subplots(1, 4, figsize=(20, 4))
+for ax, (name, (y_true, y_pred, _)), color in zip(axes_th, models.items(), COLORS):
+    best_t, best_f1, thresholds, f1s = optimal_threshold(y_true, y_pred)
+    default_f1 = f1_score((y_true < THRESHOLD).astype(int),
+                           (y_pred < THRESHOLD).astype(int), zero_division=0)
+    delta = best_f1 - default_f1
+    print(f'  {name:<20} {default_f1:>10.3f} {best_t:>13.3f} {best_f1:>8.3f}  {delta:>+8.3f}')
+    thresh_rows.append({
+        'Model': name,
+        'Default threshold': THRESHOLD,
+        'Default F1': round(default_f1, 4),
+        'Optimal threshold': round(float(best_t), 4),
+        'Optimal F1': round(best_f1, 4),
+        'F1 gain': round(delta, 4),
+    })
+    ax.plot(thresholds, f1s, color=color, lw=2)
+    ax.axvline(THRESHOLD, color='black', linestyle='--', lw=0.9, label=f'Default ({THRESHOLD})')
+    ax.axvline(best_t,    color='red',   linestyle='-',  lw=1.2, label=f'Optimal ({best_t:.3f})')
+    ax.set_xlabel('Prediction threshold')
+    ax.set_ylabel('F1')
+    ax.set_title(f'{name}\nopt={best_t:.3f}  F1={best_f1:.3f}')
+    ax.legend(fontsize=7)
+plt.suptitle(f'F1 vs Prediction Threshold — {RUN_NAME}')
+plt.tight_layout()
+plt.savefig(os.path.join(IMAGES_DIR, 'threshold_optimisation.png'), dpi=150, bbox_inches='tight')
+plt.close()
+pd.DataFrame(thresh_rows).to_csv(os.path.join(IMAGES_DIR, 'threshold_optimisation.csv'), index=False)
+print('  saved threshold_optimisation.png / .csv')
 
 # ── drought onset analysis ────────────────────────────────────────────────────
 # An "onset event" = currently sm >= THRESHOLD but actual sm at t+h < THRESHOLD.
 # This isolates the agriculturally meaningful case (drought is starting) from
 # the trivial "already dry, stays dry" case that inflates raw recall.
 print(f'\n{"="*65}')
-print(f'DROUGHT ONSET ANALYSIS (currently wet → dry within t+{HORIZON}h)')
+print(f'DROUGHT ONSET ANALYSIS (currently wet -> dry within t+{HORIZON}h)')
 print(f'{"="*65}')
 
 current_sm_tab = data['sm_value'].values[test_mask]
@@ -375,7 +427,7 @@ if not all_metrics.empty:
     print(f'\n{"="*65}')
     print('PROGRESSION ACROSS ALL TESTS')
     print(f'{"="*65}')
-    print(all_metrics[['Test', 'Model', 'MAE', 'R²', 'Recall', 'ROC AUC']].to_string(index=False))
+    print(all_metrics[['Test', 'Model', 'MAE', 'R2', 'Recall', 'ROC AUC']].to_string(index=False))
 
 # ── plots ─────────────────────────────────────────────────────────────────────
 print('\nGenerating plots...')

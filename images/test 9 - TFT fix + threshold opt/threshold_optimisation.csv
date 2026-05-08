@@ -1,0 +1,5 @@
+Model,Default threshold,Default F1,Optimal threshold,Optimal F1,F1 gain
+Random Forest,0.3,0.9674,0.305,0.9687,0.0013
+XGBoost,0.3,0.9701,0.305,0.9712,0.0011
+LSTM,0.3,0.9684,0.305,0.9688,0.0004
+TFT,0.3,0.9686,0.305,0.9688,0.0002
