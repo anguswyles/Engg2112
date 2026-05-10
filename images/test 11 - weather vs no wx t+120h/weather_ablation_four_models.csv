@@ -1,0 +1,9 @@
+Model,Weather,MAE,RMSE,R2,DroughtRecall,Horizon
+Random Forest,no,0.0236,0.0343,0.865,0.97,t+120h
+XGBoost,no,0.0235,0.0336,0.8698,0.966,t+120h
+LSTM,no,0.0214,0.0352,0.8914,0.984,t+120h
+TFT,no,0.024,0.039,0.8668,0.967,t+120h
+Random Forest,yes,0.0208,0.0315,0.8856,0.977,t+120h
+XGBoost,yes,0.0193,0.0292,0.9021,0.972,t+120h
+LSTM,yes,0.0208,0.0337,0.9009,0.974,t+120h
+TFT,yes,0.0203,0.0334,0.9021,0.962,t+120h

@@ -19,6 +19,14 @@ def future_weather_horizon_steps(horizon):
     return list(range(24, h + 1, 24))
 
 
+def _station_keys_for_sequence_cap(stations, max_sequences_seed):
+    """Sorted keys then RNG shuffle so subsampling spreads across stations (reproducible)."""
+    keys = sorted(stations.keys())
+    rng = np.random.default_rng(int(max_sequences_seed))
+    rng.shuffle(keys)
+    return keys
+
+
 def load_all_stations(with_weather=False):
     stations = {}
     for network in os.listdir(DATA_DIR):
@@ -142,7 +150,13 @@ def build_xgboost_dataset(stations, horizon=None, with_weather=False):
     return pd.concat(frames).sort_index()
 
 
-def build_lstm_dataset(stations, horizon=None, with_weather=False):
+def build_lstm_dataset(
+    stations,
+    horizon=None,
+    with_weather=False,
+    max_sequences=None,
+    max_sequences_seed=0,
+):
     """Build sequence samples for soil moisture forecasting.
 
     Without weather: returns (X, y, sample_keys).
@@ -152,6 +166,9 @@ def build_lstm_dataset(stations, horizon=None, with_weather=False):
     X_future_wx shape: (n, n_future_steps, n_wx): oracle weather at t+24h…t+h
     offsets matching build_xgboost_dataset's shifted columns.
     sample_keys is a (n,) array of station keys for per-station temporal splits.
+
+    If max_sequences is set, stop after that many samples; station order is
+    shuffled (seed max_sequences_seed) so the cap is not biased to early keys.
     """
     h = horizon or HORIZON
     wx_cols = list(WEATHER_COLS) + list(DERIVED_WEATHER_COLS)
@@ -161,13 +178,28 @@ def build_lstm_dataset(stations, horizon=None, with_weather=False):
     n_wx = len(wx_cols)
     fut_steps = future_weather_horizon_steps(h) if with_weather else []
 
-    for key, (df, _) in stations.items():
+    key_order = (
+        _station_keys_for_sequence_cap(stations, max_sequences_seed)
+        if max_sequences is not None
+        else list(stations.keys())
+    )
+    capped = False
+    for key in key_order:
+        if capped:
+            break
+        pair = stations.get(key)
+        if pair is None:
+            continue
+        df, _ = pair
         if not all(c in df.columns for c in feat_cols):
             continue
         arr = df[feat_cols].ffill().bfill().dropna().values.astype(np.float32)
         if len(arr) < WINDOW + h + 10:
             continue
         for i in range(WINDOW, len(arr) - h):
+            if max_sequences is not None and len(all_X) >= max_sequences:
+                capped = True
+                break
             all_X.append(arr[i - WINDOW:i])
             all_y.append(arr[i + h - 1, 0])
             all_keys.append(key)
@@ -186,7 +218,13 @@ def build_lstm_dataset(stations, horizon=None, with_weather=False):
     return X, np.array(all_future, dtype=np.float32), y, keys
 
 
-def build_tft_dataset(stations, horizon=None, with_weather=False):
+def build_tft_dataset(
+    stations,
+    horizon=None,
+    with_weather=False,
+    max_sequences=None,
+    max_sequences_seed=0,
+):
     """Build TFT sequence samples.
 
     Without weather: returns (X_seq, X_static, y, sample_keys).
@@ -194,6 +232,8 @@ def build_tft_dataset(stations, horizon=None, with_weather=False):
 
     X_future_wx is oracle weather at t+24h…t+h, aligned with XGBoost.
     sample_keys is a (n,) array of station keys for per-station temporal splits.
+
+    max_sequences / max_sequences_seed: same semantics as build_lstm_dataset.
     """
     h = horizon or HORIZON
     wx_cols = list(WEATHER_COLS) + list(DERIVED_WEATHER_COLS)
@@ -203,7 +243,19 @@ def build_tft_dataset(stations, horizon=None, with_weather=False):
     n_wx = len(wx_cols)
     fut_steps = future_weather_horizon_steps(h) if with_weather else []
 
-    for key, (df, meta) in stations.items():
+    key_order = (
+        _station_keys_for_sequence_cap(stations, max_sequences_seed)
+        if max_sequences is not None
+        else list(stations.keys())
+    )
+    capped = False
+    for key in key_order:
+        if capped:
+            break
+        pair = stations.get(key)
+        if pair is None:
+            continue
+        df, meta = pair
         if not all(c in df.columns for c in feat_cols):
             continue
         arr = df[feat_cols].ffill().bfill().dropna().values.astype(np.float32)
@@ -212,6 +264,9 @@ def build_tft_dataset(stations, horizon=None, with_weather=False):
         static = np.array([meta['latitude'], meta['longitude'],
                            meta['elevation_m'], meta['depth_m']], dtype=np.float32)
         for i in range(WINDOW, len(arr) - h):
+            if max_sequences is not None and len(all_X) >= max_sequences:
+                capped = True
+                break
             all_X.append(arr[i - WINDOW:i])
             all_static.append(static)
             all_y.append(arr[i + h - 1, 0])

@@ -1,0 +1,6 @@
+Model,Onsets in test,Caught,Catch rate,False alarms,Wet stayed wet,False alarm rate,Onset precision
+Persistence,6435,2929,0.4552,3370,37164,0.0907,0.465
+Random Forest,6435,3642,0.566,1609,37164,0.0433,0.6936
+XGBoost,6435,3702,0.5753,1028,37164,0.0277,0.7827
+LSTM,7337,3350,0.4566,1512,62278,0.0243,0.689
+TFT,7337,3607,0.4916,1175,62278,0.0189,0.7543
