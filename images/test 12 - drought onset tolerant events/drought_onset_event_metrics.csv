@@ -1,0 +1,13 @@
+Model,Threshold label,Probability threshold,Actual onset events,Predicted warning events,Caught events,Missed events,False alarm events,Event recall,Event precision,Event F1
+Random Forest,default_0.5,0.5,304,438,295,9,127,0.9704,0.71,0.8201
+Random Forest,best_f1,0.62,304,428,285,19,112,0.9375,0.7383,0.8261
+Random Forest,max_recall_at_fa<=0.05,0.7,304,391,263,41,93,0.8651,0.7621,0.8104
+XGBoost,default_0.5,0.5,304,485,295,9,145,0.9704,0.701,0.814
+XGBoost,best_f1,0.56,304,472,294,10,129,0.9671,0.7267,0.8298
+XGBoost,max_recall_at_fa<=0.05,0.74,304,435,271,33,110,0.8914,0.7471,0.8129
+LSTM,default_0.5,0.5,193,280,189,4,89,0.9793,0.6821,0.8041
+LSTM,best_f1,0.71,193,276,186,7,84,0.9637,0.6957,0.808
+LSTM,max_recall_at_fa<=0.05,0.87,193,261,173,20,71,0.8964,0.728,0.8034
+TFT,default_0.5,0.5,193,286,190,3,98,0.9845,0.6573,0.7883
+TFT,best_f1,0.83,193,253,178,15,73,0.9223,0.7115,0.8033
+TFT,max_recall_at_fa<=0.05,0.89,193,250,172,21,64,0.8912,0.744,0.811

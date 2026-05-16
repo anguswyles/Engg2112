@@ -1,0 +1,7 @@
+Model,Threshold label,Probability threshold,Actual onset events,Predicted warning events,Caught events,Missed events,False alarm events,Event recall,Event precision,Event F1
+Persistence,default_0.5,0.5,304,0,0,304,0,0.0,0.0,0.0
+Persistence,best_f1,0.01,304,0,0,304,0,0.0,0.0,0.0
+Persistence,max_recall_at_fa<=0.05,0.01,304,0,0,304,0,0.0,0.0,0.0
+Linear Trend,default_0.5,0.5,304,493,152,152,251,0.5,0.4909,0.4954
+Linear Trend,best_f1,0.46,304,487,152,152,257,0.5,0.4723,0.4857
+Linear Trend,max_recall_at_fa<=0.05,0.69,304,422,128,176,188,0.4211,0.5545,0.4786

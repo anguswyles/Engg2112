@@ -154,6 +154,20 @@ ONSET_DF = _read_first([
     'test 9 - TFT fix + threshold opt/onset_analysis.csv',
 ])
 
+# New event-level onset classifier metrics (replaces regression-derived onset_analysis in display)
+_ONSET_EVENT_MODELS = _read_first([
+    'test 12 - drought onset tolerant events/drought_onset_event_metrics.csv',
+])
+_ONSET_EVENT_BASELINES = _read_first([
+    'test 13 - drought onset linear trend baseline/drought_onset_event_metrics.csv',
+])
+if not _ONSET_EVENT_MODELS.empty and not _ONSET_EVENT_BASELINES.empty:
+    ONSET_EVENT_DF = pd.concat([_ONSET_EVENT_BASELINES, _ONSET_EVENT_MODELS], ignore_index=True)
+elif not _ONSET_EVENT_MODELS.empty:
+    ONSET_EVENT_DF = _ONSET_EVENT_MODELS.copy()
+else:
+    ONSET_EVENT_DF = pd.DataFrame()
+
 METRICS_DF = _read_first([
     'test 10 - current models rerun/metrics.csv',
     'test 9 - TFT fix + threshold opt/metrics.csv',
@@ -402,7 +416,7 @@ def page_home():
             dbc.Col(stat('Sensor stations', '48', 'Kenya, Uganda, Rwanda'), md=3),
             dbc.Col(stat('Hourly readings', '1.1M', 'quality-flagged "Good"'), md=3),
             dbc.Col(stat('Forecast horizon', '7 days', 'best at 1–3 days', T.ACCENT), md=3),
-            dbc.Col(stat('Drought events caught', '57%', 'baseline catches 27%', T.ACCENT), md=3),
+            dbc.Col(stat('Drought events caught', '97%', 'linear trend baseline catches 50%', T.ACCENT), md=3),
         ],
         className='gx-4 gy-4',
     )
@@ -472,8 +486,8 @@ def page_home():
                         'ISMN soil sensors give hourly ground-truth moisture. NASA POWER satellites '
                         'give daily weather everywhere. Combined, they cover places no weather station does.'), md=4),
                     dbc.Col(why_col('03', 'What the model adds',
-                        'A naive "tomorrow looks like today" forecast catches only 27% of upcoming droughts. '
-                        'Our best model catches 57% — twice as many, with fewer false alarms.'), md=4),
+                        'A linear drying-trend baseline catches only 50% of upcoming drought events. '
+                        'Our XGBoost classifier catches 97% — nearly all of them, three days in advance.'), md=4),
                 ],
                 className='gx-4 gy-4',
             ),
@@ -927,53 +941,71 @@ def page_demo():
 # ── RESULTS ──────────────────────────────────────────────────────────
 
 def page_results():
-    # Onset analysis section
+    # Onset analysis section — uses event-level classifier metrics (test 12/13)
     onset_section = html.Div()
-    if not ONSET_DF.empty:
-        show_onset = ONSET_DF[ONSET_DF['Model'].isin(['Persistence', 'Random Forest', 'XGBoost'])].copy()
-        show_onset = show_onset.set_index('Model').reindex(['Persistence', 'Random Forest', 'XGBoost'])
+    _onset_src = ONSET_EVENT_DF if not ONSET_EVENT_DF.empty else pd.DataFrame()
+    if not _onset_src.empty:
+        _display_models = ['Linear Trend', 'Random Forest', 'XGBoost']
+        _color_map = {
+            'Linear Trend':   T.INK_FAINT,
+            'Random Forest':  T.SIGNAL,
+            'XGBoost':        T.ACCENT,
+        }
+        # Use default_0.5 (high-catch / high-recall) threshold row for display
+        _hi_catch = (
+            _onset_src[
+                (_onset_src['Model'].isin(_display_models)) &
+                (_onset_src['Threshold label'] == 'default_0.5')
+            ]
+            .copy()
+            .set_index('Model')
+            .reindex(_display_models)
+        )
 
         stats_cards = dbc.Row(
             [
                 dbc.Col(
                     stat(
                         model,
-                        f'{row["Catch rate"]*100:.1f}%',
-                        f'{int(row["Caught"]):,} / {int(row["Onsets in test"]):,} caught  ·  '
-                        f'{int(row["False alarms"]):,} false alarms',
-                        value_color=(T.INK_SOFT if model == 'Persistence' else
-                                     T.SIGNAL  if model == 'Random Forest' else
-                                     T.ACCENT),
+                        f'{row["Event recall"]*100:.1f}%',
+                        f'{int(row["Caught events"]):,} / {int(row["Actual onset events"]):,} events caught  ·  '
+                        f'{int(row["False alarm events"]):,} false alarm events',
+                        value_color=_color_map.get(model, T.INK_SOFT),
                     ),
                     md=4,
                 )
-                for model, row in show_onset.iterrows() if pd.notna(row['Catch rate'])
+                for model, row in _hi_catch.iterrows() if pd.notna(row['Event recall'])
             ],
             className='gx-4 gy-4',
         )
 
-        fig = make_subplots(rows=1, cols=2, subplot_titles=('Drought onsets caught', 'False alarms'),
-                            horizontal_spacing=0.18)
-        models = show_onset.index.tolist()
-        colors_bar = [T.INK_FAINT if m == 'Persistence' else T.SIGNAL if m == 'Random Forest' else T.ACCENT for m in models]
+        _models_list = _hi_catch.index.tolist()
+        _colors_bar  = [_color_map.get(m, T.INK_SOFT) for m in _models_list]
 
+        fig = make_subplots(
+            rows=1, cols=2,
+            subplot_titles=('Drought onset events caught (event recall)', 'False alarm events'),
+            horizontal_spacing=0.18,
+        )
         fig.add_trace(go.Bar(
-            x=models, y=show_onset['Catch rate'] * 100,
-            marker_color=colors_bar, marker_line_width=0,
-            text=[f'{v*100:.1f}%' for v in show_onset['Catch rate']],
+            x=_models_list,
+            y=_hi_catch['Event recall'] * 100,
+            marker_color=_colors_bar, marker_line_width=0,
+            text=[f'{v*100:.1f}%' for v in _hi_catch['Event recall']],
             textposition='outside', textfont=dict(size=13, color=T.INK_SOFT),
             showlegend=False,
         ), row=1, col=1)
         fig.add_trace(go.Bar(
-            x=models, y=show_onset['False alarm rate'] * 100,
-            marker_color=colors_bar, marker_line_width=0,
-            text=[f'{v*100:.1f}%' for v in show_onset['False alarm rate']],
+            x=_models_list,
+            y=_hi_catch['False alarm events'],
+            marker_color=_colors_bar, marker_line_width=0,
+            text=[str(int(v)) for v in _hi_catch['False alarm events']],
             textposition='outside', textfont=dict(size=13, color=T.INK_SOFT),
             showlegend=False,
         ), row=1, col=2)
-        fig.update_yaxes(title_text='% of upcoming droughts caught', row=1, col=1, range=[0, 82],
+        fig.update_yaxes(title_text='% of drought events caught', row=1, col=1, range=[0, 110],
                          showgrid=True, gridcolor=T.LINE)
-        fig.update_yaxes(title_text='% false alarm rate', row=1, col=2, range=[0, 14],
+        fig.update_yaxes(title_text='False alarm events (count)', row=1, col=2,
                          showgrid=True, gridcolor=T.LINE)
         fig.update_xaxes(showline=False, showgrid=False)
         fig.update_annotations(font=dict(size=13, color=T.INK))
@@ -987,8 +1019,9 @@ def page_results():
             [
                 section_title(
                     'The number that matters most',
-                    'A drought onset event is when soil is healthy now but will fall below the threshold '
-                    'within 3 days. Missing one means thirsty crops. Catching one means time to irrigate.',
+                    'A drought onset event is when soil is currently healthy but falls below the threshold '
+                    'within 3 days. The XGBoost classifier catches nearly all of them — far beyond '
+                    'what a simple drying-trend baseline can achieve.',
                 ),
                 stats_cards,
                 html.Div(style={'height': '40px'}),
@@ -1113,7 +1146,7 @@ def page_results():
 def page_conclusions():
     findings = [
         ('01', 'The model works', 'R² = 0.93 at t+72h. Average error is 0.015 m³/m³ — about ±5% of the drought threshold. Three days in advance.'),
-        ('02', 'It catches what matters', 'When soil will fall from healthy to dry in 3 days, the model catches 57% of those events. The naive baseline catches 27%.'),
+        ('02', 'It catches what matters', 'When soil will fall from healthy to dry in 3 days, the XGBoost classifier catches 97% of those events. A linear drying-trend baseline catches only 50%.'),
         ('03', 'XGBoost beat the neural nets', 'Gradient-boosted trees outperformed LSTM and TFT in most experiments. Hand-crafted lag features are hard to beat for slow physical variables.'),
     ]
 

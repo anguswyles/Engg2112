@@ -1,0 +1,7 @@
+Model,Threshold label,Probability threshold,Test samples,Onsets,Caught,Missed,False alarms,Recall,Precision,F1,False alarm rate,PR AUC,ROC AUC
+Persistence,default_0.5,0.5,43599,6435,0,6435,0,0.0,0.0,0.0,0.0,0.1476,0.5
+Persistence,best_f1,0.01,43599,6435,0,6435,0,0.0,0.0,0.0,0.0,0.1476,0.5
+Persistence,max_recall_at_fa<=0.05,0.01,43599,6435,0,6435,0,0.0,0.0,0.0,0.0,0.1476,0.5
+Linear Trend,default_0.5,0.5,43599,6435,3462,2973,2800,0.538,0.5529,0.5453,0.0753,0.4166,0.7126
+Linear Trend,best_f1,0.46,43599,6435,3579,2856,3063,0.5562,0.5388,0.5474,0.0824,0.4166,0.7126
+Linear Trend,max_recall_at_fa<=0.05,0.69,43599,6435,2338,4097,1775,0.3633,0.5684,0.4433,0.0478,0.4166,0.7126

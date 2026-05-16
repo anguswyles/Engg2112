@@ -156,6 +156,7 @@ def build_lstm_dataset(
     with_weather=False,
     max_sequences=None,
     max_sequences_seed=0,
+    return_times=False,
 ):
     """Build sequence samples for soil moisture forecasting.
 
@@ -173,7 +174,7 @@ def build_lstm_dataset(
     h = horizon or HORIZON
     wx_cols = list(WEATHER_COLS) + list(DERIVED_WEATHER_COLS)
     feat_cols = ['sm_value'] + (wx_cols if with_weather else [])
-    all_X, all_y, all_keys = [], [], []
+    all_X, all_y, all_keys, all_current_times, all_target_times = [], [], [], [], []
     all_future = [] if with_weather else None
     n_wx = len(wx_cols)
     fut_steps = future_weather_horizon_steps(h) if with_weather else []
@@ -193,7 +194,9 @@ def build_lstm_dataset(
         df, _ = pair
         if not all(c in df.columns for c in feat_cols):
             continue
-        arr = df[feat_cols].ffill().bfill().dropna().values.astype(np.float32)
+        clean = df[feat_cols].ffill().bfill().dropna()
+        arr = clean.values.astype(np.float32)
+        times = clean.index.to_numpy()
         if len(arr) < WINDOW + h + 10:
             continue
         for i in range(WINDOW, len(arr) - h):
@@ -203,6 +206,9 @@ def build_lstm_dataset(
             all_X.append(arr[i - WINDOW:i])
             all_y.append(arr[i + h - 1, 0])
             all_keys.append(key)
+            if return_times:
+                all_current_times.append(times[i - 1])
+                all_target_times.append(times[i + h - 1])
             if with_weather:
                 t0 = i - 1
                 fut = np.empty((len(fut_steps), n_wx), dtype=np.float32)
@@ -213,6 +219,12 @@ def build_lstm_dataset(
     X = np.array(all_X, dtype=np.float32)
     y = np.array(all_y, dtype=np.float32)
     keys = np.array(all_keys)
+    if return_times:
+        current_times = np.array(all_current_times, dtype='datetime64[ns]')
+        target_times = np.array(all_target_times, dtype='datetime64[ns]')
+        if not with_weather:
+            return X, y, keys, current_times, target_times
+        return X, np.array(all_future, dtype=np.float32), y, keys, current_times, target_times
     if not with_weather:
         return X, y, keys
     return X, np.array(all_future, dtype=np.float32), y, keys
@@ -224,6 +236,7 @@ def build_tft_dataset(
     with_weather=False,
     max_sequences=None,
     max_sequences_seed=0,
+    return_times=False,
 ):
     """Build TFT sequence samples.
 
@@ -238,7 +251,7 @@ def build_tft_dataset(
     h = horizon or HORIZON
     wx_cols = list(WEATHER_COLS) + list(DERIVED_WEATHER_COLS)
     feat_cols = ['sm_value'] + (wx_cols if with_weather else [])
-    all_X, all_static, all_y, all_keys = [], [], [], []
+    all_X, all_static, all_y, all_keys, all_current_times, all_target_times = [], [], [], [], [], []
     all_future = [] if with_weather else None
     n_wx = len(wx_cols)
     fut_steps = future_weather_horizon_steps(h) if with_weather else []
@@ -258,7 +271,9 @@ def build_tft_dataset(
         df, meta = pair
         if not all(c in df.columns for c in feat_cols):
             continue
-        arr = df[feat_cols].ffill().bfill().dropna().values.astype(np.float32)
+        clean = df[feat_cols].ffill().bfill().dropna()
+        arr = clean.values.astype(np.float32)
+        times = clean.index.to_numpy()
         if len(arr) < WINDOW + h + 10:
             continue
         static = np.array([meta['latitude'], meta['longitude'],
@@ -271,6 +286,9 @@ def build_tft_dataset(
             all_static.append(static)
             all_y.append(arr[i + h - 1, 0])
             all_keys.append(key)
+            if return_times:
+                all_current_times.append(times[i - 1])
+                all_target_times.append(times[i + h - 1])
             if with_weather:
                 t0 = i - 1
                 fut = np.empty((len(fut_steps), n_wx), dtype=np.float32)
@@ -282,6 +300,12 @@ def build_tft_dataset(
     y = np.array(all_y, dtype=np.float32)
     static_arr = np.array(all_static, dtype=np.float32)
     keys = np.array(all_keys)
+    if return_times:
+        current_times = np.array(all_current_times, dtype='datetime64[ns]')
+        target_times = np.array(all_target_times, dtype='datetime64[ns]')
+        if not with_weather:
+            return X, static_arr, y, keys, current_times, target_times
+        return X, np.array(all_future, dtype=np.float32), static_arr, y, keys, current_times, target_times
     if not with_weather:
         return X, static_arr, y, keys
     return X, np.array(all_future, dtype=np.float32), static_arr, y, keys
