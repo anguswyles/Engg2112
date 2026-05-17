@@ -154,19 +154,24 @@ ONSET_DF = _read_first([
     'test 9 - TFT fix + threshold opt/onset_analysis.csv',
 ])
 
-# New event-level onset classifier metrics (replaces regression-derived onset_analysis in display)
-_ONSET_EVENT_MODELS = _read_first([
-    'test 12 - drought onset tolerant events/drought_onset_event_metrics.csv',
+# Event-level onset classifier metrics. Prefer the latest 7-day warning run,
+# falling back to the earlier 72h experiment if those outputs are unavailable.
+ONSET_EVENT_DF = _read_first([
+    'test 14 - drought onset 168h 24h tolerance/drought_onset_event_metrics.csv',
 ])
-_ONSET_EVENT_BASELINES = _read_first([
-    'test 13 - drought onset linear trend baseline/drought_onset_event_metrics.csv',
-])
-if not _ONSET_EVENT_MODELS.empty and not _ONSET_EVENT_BASELINES.empty:
-    ONSET_EVENT_DF = pd.concat([_ONSET_EVENT_BASELINES, _ONSET_EVENT_MODELS], ignore_index=True)
-elif not _ONSET_EVENT_MODELS.empty:
-    ONSET_EVENT_DF = _ONSET_EVENT_MODELS.copy()
-else:
-    ONSET_EVENT_DF = pd.DataFrame()
+if ONSET_EVENT_DF.empty:
+    _ONSET_EVENT_MODELS = _read_first([
+        'test 12 - drought onset tolerant events/drought_onset_event_metrics.csv',
+    ])
+    _ONSET_EVENT_BASELINES = _read_first([
+        'test 13 - drought onset linear trend baseline/drought_onset_event_metrics.csv',
+    ])
+    if not _ONSET_EVENT_MODELS.empty and not _ONSET_EVENT_BASELINES.empty:
+        ONSET_EVENT_DF = pd.concat([_ONSET_EVENT_BASELINES, _ONSET_EVENT_MODELS], ignore_index=True)
+    elif not _ONSET_EVENT_MODELS.empty:
+        ONSET_EVENT_DF = _ONSET_EVENT_MODELS.copy()
+    else:
+        ONSET_EVENT_DF = pd.DataFrame()
 
 METRICS_DF = _read_first([
     'test 10 - current models rerun/metrics.csv',
@@ -390,7 +395,7 @@ def page_home():
         [
             section_label('ENGG2112  ·  Data Farmers'),
             html.H1(
-                'Will the soil be dry on Thursday?',
+                'Will drought hit next week?',
                 style={
                     'fontSize': '54px', 'fontWeight': 600, 'letterSpacing': '-0.03em',
                     'color': T.INK, 'lineHeight': 1.05, 'marginBottom': '24px',
@@ -399,8 +404,8 @@ def page_home():
             ),
             html.P(
                 'A machine-learning system that warns smallholder farmers in East Africa '
-                'three days before their soil dries below the drought stress threshold, '
-                'so they irrigate in advance rather than after their crops have wilted.',
+                'about a week before their soil dries below the drought stress threshold, '
+                'then estimates whether the stress is likely to persist.',
                 style={
                     'fontSize': '19px', 'color': T.INK_SOFT, 'lineHeight': 1.55,
                     'maxWidth': '780px', 'marginBottom': 0,
@@ -415,8 +420,8 @@ def page_home():
         [
             dbc.Col(stat('Sensor stations', '48', 'Kenya, Uganda, Rwanda'), md=3),
             dbc.Col(stat('Hourly readings', '1.1M', 'quality-flagged "Good"'), md=3),
-            dbc.Col(stat('Forecast horizon', '7 days', 'best at 1–3 days', T.ACCENT), md=3),
-            dbc.Col(stat('Drought events caught', '97%', 'linear trend baseline catches 50%', T.ACCENT), md=3),
+            dbc.Col(stat('Warning horizon', '7 days', '168-192h onset window', T.ACCENT), md=3),
+            dbc.Col(stat('Drought events caught', '99%', 'linear trend baseline catches 52%', T.ACCENT), md=3),
         ],
         className='gx-4 gy-4',
     )
@@ -481,13 +486,13 @@ def page_home():
                 [
                     dbc.Col(why_col('01', 'The farmer\'s dilemma',
                         'Most smallholders irrigate reactively. By the time leaves wilt, the yield '
-                        'damage is already done. A 3-day warning lets water arrive before stress sets in.'), md=4),
+                        'damage is already done. A 7-day warning gives time to plan water before stress sets in.'), md=4),
                     dbc.Col(why_col('02', 'The data we have',
                         'ISMN soil sensors give hourly ground-truth moisture. NASA POWER satellites '
                         'give daily weather everywhere. Combined, they cover places no weather station does.'), md=4),
                     dbc.Col(why_col('03', 'What the model adds',
-                        'A linear drying-trend baseline catches only 50% of upcoming drought events. '
-                        'Our XGBoost classifier catches 97% — nearly all of them, three days in advance.'), md=4),
+                        'A linear drying-trend baseline catches only 52% of upcoming drought events. '
+                        'Our XGBoost classifier catches 99% at a 7-day horizon, using a 24-hour onset window.'), md=4),
                 ],
                 className='gx-4 gy-4',
             ),
@@ -941,7 +946,7 @@ def page_demo():
 # ── RESULTS ──────────────────────────────────────────────────────────
 
 def page_results():
-    # Onset analysis section — uses event-level classifier metrics (test 12/13)
+    # Onset analysis section — uses event-level 7-day classifier metrics (test 14)
     onset_section = html.Div()
     _onset_src = ONSET_EVENT_DF if not ONSET_EVENT_DF.empty else pd.DataFrame()
     if not _onset_src.empty:
@@ -951,11 +956,11 @@ def page_results():
             'Random Forest':  T.SIGNAL,
             'XGBoost':        T.ACCENT,
         }
-        # Use default_0.5 (high-catch / high-recall) threshold row for display
+        # Use the best-F1 operating point from the tolerant 168-192h warning experiment.
         _hi_catch = (
             _onset_src[
                 (_onset_src['Model'].isin(_display_models)) &
-                (_onset_src['Threshold label'] == 'default_0.5')
+                (_onset_src['Threshold label'] == 'best_f1')
             ]
             .copy()
             .set_index('Model')
@@ -1018,16 +1023,47 @@ def page_results():
         onset_section = html.Div(
             [
                 section_title(
-                    'The number that matters most',
+                    'Seven-day drought warnings',
                     'A drought onset event is when soil is currently healthy but falls below the threshold '
-                    'within 3 days. The XGBoost classifier catches nearly all of them — far beyond '
-                    'what a simple drying-trend baseline can achieve.',
+                    'around 7 days from now. The model uses a 24-hour onset window, so warnings are useful '
+                    'without pretending the exact hour of crossing is perfectly known.',
                 ),
                 stats_cards,
                 html.Div(style={'height': '40px'}),
                 graph(fig, height=440),
             ]
         )
+
+    # Duration / drought-state extension
+    duration_section = html.Div(
+        [
+            section_title(
+                'From "will drought start?" to "how long will it last?"',
+                'The latest implementation adds a drought-state model that can scan later 24-hour windows '
+                'after a warning. This is the foundation for estimating whether a coming drought is a short '
+                'dip or a sustained stress period.',
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(stat('Step 1', 'Onset', 'warns for drought in the 168-192h window', T.ACCENT), md=4),
+                    dbc.Col(stat('Step 2', 'State scan', 'checks later 24h windows with RF/XGBoost', T.SIGNAL), md=4),
+                    dbc.Col(stat('Step 3', 'Duration', 'stops after sustained predicted recovery', T.OK), md=4),
+                ],
+                className='gx-4 gy-4',
+            ),
+            html.Div(
+                'The state model predicts whether soil is below the drought threshold for at least 6 hours '
+                'inside each future day. Running those predictions forward lets the app turn a warning into '
+                'a practical duration bucket such as short, moderate, long, or extended.',
+                style={
+                    'fontSize': '14px', 'color': T.INK_SOFT, 'lineHeight': 1.6,
+                    'marginTop': '20px', 'paddingLeft': '16px',
+                    'borderLeft': f'2px solid {T.LINE}',
+                },
+            ),
+        ],
+        style={'marginTop': '80px'},
+    )
 
     # Economic value calculator
     economic_section = html.Div(
@@ -1135,6 +1171,7 @@ def page_results():
         page_title('Results', 'Before, after, and the trade-offs',
                    'Drought-event detection, performance vs horizon, and the impact of adding weather features.'),
         onset_section,
+        duration_section,
         economic_section,
         horizon_section,
         wabl_section,
@@ -1145,9 +1182,9 @@ def page_results():
 
 def page_conclusions():
     findings = [
-        ('01', 'The model works', 'R² = 0.93 at t+72h. Average error is 0.015 m³/m³ — about ±5% of the drought threshold. Three days in advance.'),
-        ('02', 'It catches what matters', 'When soil will fall from healthy to dry in 3 days, the XGBoost classifier catches 97% of those events. A linear drying-trend baseline catches only 50%.'),
-        ('03', 'XGBoost beat the neural nets', 'Gradient-boosted trees outperformed LSTM and TFT in most experiments. Hand-crafted lag features are hard to beat for slow physical variables.'),
+        ('01', 'The warning horizon is practical', 'At a 7-day horizon with a 24-hour onset window, XGBoost catches 297 of 301 drought events and Random Forest catches 296.'),
+        ('02', 'The baseline is not enough', 'A linear drying-trend baseline catches only 52% of events in the same setup, while generating more false warning events than either ML model.'),
+        ('03', 'The system now estimates persistence', 'A new drought-state model can scan future 24-hour windows after an onset warning, forming the basis for short, moderate, long, or extended duration estimates.'),
     ]
 
     findings_section = html.Div([
