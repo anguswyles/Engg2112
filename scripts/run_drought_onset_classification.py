@@ -141,6 +141,20 @@ def tolerant_onset_labels(
     return labels
 
 
+def training_onset_labels(
+    stations: dict,
+    station_keys: np.ndarray,
+    target_times: np.ndarray,
+    exact_labels: np.ndarray,
+    threshold: float,
+    train_tolerance_hours: int,
+) -> np.ndarray:
+    """Return labels for model training, optionally broadened to the warning window."""
+    if train_tolerance_hours <= 0:
+        return exact_labels
+    return tolerant_onset_labels(stations, station_keys, target_times, threshold, train_tolerance_hours)
+
+
 def evaluate_probs(
     model_name: str,
     y_true: np.ndarray,
@@ -327,8 +341,18 @@ def train_tabular_classifiers(args, stations: dict) -> dict[str, dict]:
     test_mask = te & eligible
     X_train, y_train = X[train_mask], y_onset[train_mask]
     X_test, y_test = X[test_mask], y_onset[test_mask]
+    train_stations = data["station"].values[train_mask]
+    train_target_times = pd.to_datetime(data.index.values[train_mask]) + pd.Timedelta(hours=args.horizon)
     test_stations = data["station"].values[test_mask]
     test_target_times = pd.to_datetime(data.index.values[test_mask]) + pd.Timedelta(hours=args.horizon)
+    y_train = training_onset_labels(
+        stations,
+        train_stations,
+        train_target_times,
+        y_train,
+        args.threshold,
+        args.train_tolerance_hours,
+    )
     y_tolerant = tolerant_onset_labels(
         stations,
         test_stations,
@@ -341,7 +365,7 @@ def train_tabular_classifiers(args, stations: dict) -> dict[str, dict]:
 
     print(
         f"Tabular onset set: train={len(y_train)} positives={int(y_train.sum())} "
-        f"test={len(y_test)} positives={int(y_test.sum())}"
+        f"test={len(y_test)} exact_positives={int(y_test.sum())}"
     )
 
     rf = RandomForestClassifier(
@@ -505,12 +529,22 @@ def train_lstm_classifier(args, stations: dict) -> dict:
     test_mask = te & eligible
 
     rng = np.random.default_rng(args.seed)
+    train_stations = keys[train_mask]
+    train_target_times = target_times[train_mask]
+    y_train_all = training_onset_labels(
+        stations,
+        train_stations,
+        train_target_times,
+        y_onset[train_mask],
+        args.threshold,
+        args.train_tolerance_hours,
+    )
     if args.weather:
-        X_train, F_train, y_train = X_seq[train_mask], X_fut[train_mask], y_onset[train_mask]
+        X_train, F_train, y_train = X_seq[train_mask], X_fut[train_mask], y_train_all
         X_test, F_test, y_test = X_seq[test_mask], X_fut[test_mask], y_onset[test_mask]
         X_train, F_train, y_train = cap_rows(rng, X_train, F_train, y_train, max_n=args.max_sequence_train)
     else:
-        X_train, y_train = X_seq[train_mask], y_onset[train_mask]
+        X_train, y_train = X_seq[train_mask], y_train_all
         X_test, y_test = X_seq[test_mask], y_onset[test_mask]
         X_train, y_train = cap_rows(rng, X_train, y_train, max_n=args.max_sequence_train)
         F_train = F_test = None
@@ -526,7 +560,7 @@ def train_lstm_classifier(args, stations: dict) -> dict:
 
     print(
         f"LSTM onset set: train={len(y_train)} positives={int(y_train.sum())} "
-        f"test={len(y_test)} positives={int(y_test.sum())}"
+        f"test={len(y_test)} exact_positives={int(y_test.sum())}"
     )
     x_mean = X_train.mean(axis=(0, 1), keepdims=True)
     x_std = X_train.std(axis=(0, 1), keepdims=True) + 1e-8
@@ -596,12 +630,22 @@ def train_tft_classifier(args, stations: dict) -> dict:
     test_mask = te & eligible
 
     rng = np.random.default_rng(args.seed + 1)
+    train_stations = keys[train_mask]
+    train_target_times = target_times[train_mask]
+    y_train_all = training_onset_labels(
+        stations,
+        train_stations,
+        train_target_times,
+        y_onset[train_mask],
+        args.threshold,
+        args.train_tolerance_hours,
+    )
     if args.weather:
         X_train, F_train, S_train, y_train = (
             X_seq[train_mask],
             X_fut[train_mask],
             X_static[train_mask],
-            y_onset[train_mask],
+            y_train_all,
         )
         X_test, F_test, S_test, y_test = (
             X_seq[test_mask],
@@ -613,7 +657,7 @@ def train_tft_classifier(args, stations: dict) -> dict:
             rng, X_train, F_train, S_train, y_train, max_n=args.max_sequence_train
         )
     else:
-        X_train, S_train, y_train = X_seq[train_mask], X_static[train_mask], y_onset[train_mask]
+        X_train, S_train, y_train = X_seq[train_mask], X_static[train_mask], y_train_all
         X_test, S_test, y_test = X_seq[test_mask], X_static[test_mask], y_onset[test_mask]
         X_train, S_train, y_train = cap_rows(rng, X_train, S_train, y_train, max_n=args.max_sequence_train)
         F_train = F_test = None
@@ -629,7 +673,7 @@ def train_tft_classifier(args, stations: dict) -> dict:
 
     print(
         f"TFT onset set: train={len(y_train)} positives={int(y_train.sum())} "
-        f"test={len(y_test)} positives={int(y_test.sum())}"
+        f"test={len(y_test)} exact_positives={int(y_test.sum())}"
     )
     x_mean = X_train.mean(axis=(0, 1), keepdims=True)
     x_std = X_train.std(axis=(0, 1), keepdims=True) + 1e-8
@@ -694,10 +738,12 @@ def save_outputs(out_dir: str, results: dict[str, dict], args) -> None:
         y_true = result["y_true"]
         y_tolerant = result["y_tolerant"]
         prob = result["prob"]
+        threshold_target = y_tolerant if args.threshold_selection == "tolerant" else y_true
         sweep, best_f1_threshold, best_recall_threshold = threshold_sweeps(
-            y_true, prob, max_false_alarm_rate=args.max_false_alarm_rate
+            threshold_target, prob, max_false_alarm_rate=args.max_false_alarm_rate
         )
         sweep.insert(0, "Model", name)
+        sweep.insert(1, "Threshold selection target", args.threshold_selection)
         sweep_frames.append(sweep)
         thresholds = [
             ("default_0.5", 0.5),
@@ -758,7 +804,7 @@ def save_outputs(out_dir: str, results: dict[str, dict], args) -> None:
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     for name, result in results.items():
-        y_true = result["y_true"]
+        y_true = result["y_tolerant"] if args.threshold_selection == "tolerant" else result["y_true"]
         prob = result["prob"]
         prec, rec, _ = precision_recall_curve(y_true, prob)
         axes[0].plot(rec, prec, color=COLORS[name], label=f"{name} AP={average_precision_score(y_true, prob):.3f}")
@@ -774,7 +820,7 @@ def save_outputs(out_dir: str, results: dict[str, dict], args) -> None:
     axes[1].set_ylabel("True positive rate")
     axes[1].set_title("ROC")
     axes[1].legend(fontsize=8)
-    plt.suptitle(f"Drought onset classifier curves, t+{args.horizon}h")
+    plt.suptitle(f"Drought onset classifier curves, t+{args.horizon}h ({args.threshold_selection} target)")
     plt.tight_layout()
     plt.savefig(os.path.join(out_dir, "drought_onset_curves.png"), dpi=150)
     plt.close()
@@ -788,6 +834,18 @@ def parse_args():
     parser.add_argument("--no-weather", action="store_true", help="Train without weather/future-weather inputs")
     parser.add_argument("--baseline-only", action="store_true", help="Only run baselines (persistence + linear trend)")
     parser.add_argument("--trend-lag-hours", type=int, default=24, help="Lag used for linear trend baseline")
+    parser.add_argument(
+        "--train-tolerance-hours",
+        type=int,
+        default=0,
+        help="Broaden training positives to drought occurring from horizon to horizon+N hours (default: exact horizon)",
+    )
+    parser.add_argument(
+        "--threshold-selection",
+        choices=["exact", "tolerant"],
+        default="exact",
+        help="Choose whether best-F1 and false-alarm thresholds are selected on exact or tolerant labels",
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=512)
@@ -822,6 +880,8 @@ def main():
     print(f"Horizon: t+{args.horizon}h")
     print(f"Drought threshold: {args.threshold}")
     print(f"Success tolerance: +{args.success_tolerance_hours}h (evaluation only)")
+    print(f"Training tolerance: +{args.train_tolerance_hours}h")
+    print(f"Threshold selection target: {args.threshold_selection}")
     print(f"Weather inputs: {'yes' if args.weather else 'no'}")
     if args.baseline_only:
         print("Mode: persistence baseline only")
