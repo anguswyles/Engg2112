@@ -42,56 +42,81 @@ class T:
     """Tokens. One palette, one type system, one set of spacings."""
 
     # Colours
-    INK         = '#1A1A1A'   # primary text
-    INK_SOFT    = '#555555'   # secondary text
-    INK_FAINT   = '#8A8A8A'   # tertiary text / muted labels
-    LINE        = '#E0DDD8'   # borders + grid (slightly warmer than before)
-    LINE_SOFT   = '#EBE8E3'   # subtle dividers
-    PANEL       = '#FFFFFF'   # card / content backgrounds (pure white — lifts off BG)
-    BG          = '#F0EDE8'   # page background (warm parchment — gives the white cards depth)
+    INK         = '#181613'   # primary text — warm near-black
+    INK_SOFT    = '#5A554F'   # secondary text
+    INK_FAINT   = '#8E867D'   # tertiary text / muted labels
+    LINE        = '#E2DDD5'   # borders + grid
+    LINE_SOFT   = '#EEEAE3'   # subtle dividers
+    PANEL       = '#FBF9F5'   # card / content backgrounds (warm paper)
+    PANEL_RAISED= '#FFFFFF'   # raised surface
+    BG          = '#F2EEE7'   # page background (warm parchment)
+    BG_DEEP     = '#E9E4DB'   # deeper recess for contrast wells
 
-    ACCENT      = '#C25E2A'   # primary accent (terracotta / soil)
-    ACCENT_SOFT = '#F4E4D7'   # accent tint for fills
-    SIGNAL      = '#1F4E5F'   # secondary signal (deep teal)
-    SIGNAL_SOFT = '#DCE7EB'
+    ACCENT      = '#B8521F'   # primary accent (terracotta / soil)
+    ACCENT_DEEP = '#8A3A12'   # accent on press / strong emphasis
+    ACCENT_SOFT = '#F2DFCE'   # accent tint for fills
+    ACCENT_GLOW = 'rgba(184, 82, 31, 0.18)'
+
+    SIGNAL      = '#1E4856'   # secondary signal (deep teal)
+    SIGNAL_SOFT = '#D6E2E7'
 
     OK          = '#3A6B3A'   # green for "healthy"
     OK_SOFT     = '#E5EFE2'
-    WARN        = '#B8860B'   # amber for "watch"
-    WARN_SOFT   = '#F7EFD7'
+    WARN        = '#B07706'   # amber for "watch"
+    WARN_SOFT   = '#F7ECD2'
     ALERT       = '#A23B3B'   # red for "drought"
     ALERT_SOFT  = '#F2DCDC'
 
+    # Elevation
+    SHADOW_SM   = '0 1px 2px rgba(40, 30, 20, 0.04), 0 1px 1px rgba(40, 30, 20, 0.03)'
+    SHADOW_MD   = '0 4px 14px rgba(40, 30, 20, 0.06), 0 1px 3px rgba(40, 30, 20, 0.04)'
+    SHADOW_LG   = '0 18px 40px rgba(40, 30, 20, 0.08), 0 4px 10px rgba(40, 30, 20, 0.05)'
+
+    # Motion — Emil's strong custom curves (cubic-bezier)
+    EASE_OUT    = 'cubic-bezier(0.23, 1, 0.32, 1)'           # entrances, hovers
+    EASE_INOUT  = 'cubic-bezier(0.77, 0, 0.175, 1)'          # on-screen movement
+    EASE_DRAWER = 'cubic-bezier(0.32, 0.72, 0, 1)'           # iOS-feel
+    DUR_FAST    = '140ms'
+    DUR_BASE    = '200ms'
+    DUR_SLOW    = '420ms'
+
     # Type
     FONT = (
-        'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", '
+        '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", '
         'Roboto, Helvetica, Arial, sans-serif'
+    )
+    FONT_DISPLAY = (
+        '"Fraunces", "Inter", -apple-system, BlinkMacSystemFont, Georgia, serif'
+    )
+    FONT_MONO = (
+        '"JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace'
     )
 
 
 # Plotly template
 # Margins: left/bottom are generous so tick labels never clip; top minimal (titles live in HTML)
-_MARGIN = dict(l=60, r=24, t=16, b=52)
+_MARGIN = dict(l=64, r=28, t=20, b=56)
 
 pio.templates['min'] = go.layout.Template(
     layout=go.Layout(
         font=dict(family=T.FONT, size=13, color=T.INK),
         colorway=[T.ACCENT, T.SIGNAL, T.OK, T.WARN, T.ALERT, T.INK_SOFT],
-        plot_bgcolor=T.PANEL,
-        paper_bgcolor='rgba(0,0,0,0)',   # transparent — shows page BG behind chart
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
         margin=_MARGIN,
         xaxis=dict(showgrid=False, zeroline=False, showline=True, linecolor=T.LINE,
-                   linewidth=1, ticks='outside', ticklen=5,
-                   tickcolor=T.LINE, tickfont=dict(size=12, color=T.INK_SOFT),
+                   linewidth=1, ticks='outside', ticklen=4,
+                   tickcolor=T.LINE, tickfont=dict(size=11, color=T.INK_FAINT,
+                                                   family=T.FONT_MONO),
                    automargin=True),
-        yaxis=dict(showgrid=True, gridcolor=T.LINE, gridwidth=1,
-                   zeroline=False, showline=True, linecolor=T.LINE, linewidth=1,
-                   ticks='outside', ticklen=5, tickcolor=T.LINE,
-                   tickfont=dict(size=12, color=T.INK_SOFT),
+        yaxis=dict(showgrid=True, gridcolor=T.LINE_SOFT, gridwidth=1,
+                   zeroline=False, showline=False, linecolor=T.LINE, linewidth=1,
+                   ticks='outside', ticklen=0, tickcolor=T.LINE,
+                   tickfont=dict(size=11, color=T.INK_FAINT, family=T.FONT_MONO),
                    automargin=True),
         legend=dict(bgcolor='rgba(0,0,0,0)', borderwidth=0,
                     font=dict(size=12, color=T.INK_SOFT)),
-        hoverlabel=dict(bgcolor=T.PANEL, bordercolor=T.LINE,
+        hoverlabel=dict(bgcolor=T.PANEL_RAISED, bordercolor=T.LINE,
                         font=dict(family=T.FONT, size=12, color=T.INK)),
     )
 )
@@ -194,55 +219,77 @@ STATION_LABELS = {s: s.split('/', 1)[1].replace('_', ' ') for s in STATIONS_SORT
 # Reusable components
 # ──────────────────────────────────────────────────────────────────────
 
-def section_label(text):
-    """Small uppercase label above a section title."""
+def section_label(text, accent=False):
+    """Small uppercase label above a section title (eyebrow)."""
+    cls = 'eyebrow eyebrow-accent' if accent else 'eyebrow'
     return html.Div(
         text.upper(),
-        style={
-            'fontSize': '11px', 'letterSpacing': '0.15em', 'fontWeight': 600,
-            'color': T.INK_FAINT, 'marginBottom': '10px',
-        },
+        className=cls,
+        style={'marginBottom': '14px'},
     )
 
 
 def page_title(eyebrow, title, lede=None):
-    """Standard page header — eyebrow label, big title, optional one-line lede."""
+    """Standard page header — eyebrow label, big serif display title, optional lede."""
     children = [
-        section_label(eyebrow),
-        html.H1(title, style={
-            'fontSize': '40px', 'fontWeight': 600, 'letterSpacing': '-0.02em',
-            'color': T.INK, 'marginBottom': '12px', 'lineHeight': 1.1,
-        }),
+        html.Div(className='reveal reveal-1', children=[section_label(eyebrow, accent=True)]),
+        html.Div(
+            className='reveal reveal-2',
+            children=html.H1(
+                title,
+                className='display',
+                style={
+                    'fontSize': 'clamp(40px, 5.2vw, 60px)',
+                    'color': T.INK,
+                    'margin': '0 0 16px 0',
+                    'maxWidth': '900px',
+                },
+            ),
+        ),
     ]
     if lede:
-        children.append(html.P(lede, style={
-            'fontSize': '17px', 'color': T.INK_SOFT, 'maxWidth': '720px',
-            'lineHeight': 1.5, 'marginBottom': 0,
-        }))
-    return html.Div(children, style={'marginBottom': '40px'})
+        children.append(
+            html.Div(
+                className='reveal reveal-3',
+                children=html.P(lede, style={
+                    'fontSize': '18px', 'color': T.INK_SOFT, 'maxWidth': '720px',
+                    'lineHeight': 1.55, 'margin': 0, 'fontWeight': 400,
+                }),
+            )
+        )
+    # decorative rule under headers
+    children.append(html.Div(className='rule', style={'marginTop': '32px'}))
+    return html.Div(children, style={'marginBottom': '56px'})
 
 
 def section_title(title, sub=None):
     children = [html.H2(title, style={
-        'fontSize': '24px', 'fontWeight': 600, 'letterSpacing': '-0.01em',
-        'color': T.INK, 'marginBottom': '8px',
+        'fontSize': '26px', 'fontWeight': 600, 'letterSpacing': '-0.018em',
+        'color': T.INK, 'margin': '0 0 10px 0', 'lineHeight': 1.15,
+        'fontFamily': T.FONT_DISPLAY,
     })]
     if sub:
         children.append(html.P(sub, style={
-            'fontSize': '15px', 'color': T.INK_SOFT, 'marginBottom': '24px',
-            'lineHeight': 1.5,
+            'fontSize': '15px', 'color': T.INK_SOFT, 'margin': '0 0 28px 0',
+            'lineHeight': 1.55, 'maxWidth': '720px',
         }))
     else:
-        children[-1].style['marginBottom'] = '24px'
+        children[-1].style['marginBottom'] = '28px'
     return html.Div(children, style={'marginBottom': '8px'})
 
 
-def card(children, padding='28px'):
+def card(children, padding='28px', lift=True, raised=False):
+    bg = T.PANEL_RAISED if raised else T.PANEL
     return html.Div(
         children,
+        className='lift' if lift else '',
         style={
-            'background': T.PANEL, 'border': f'1px solid {T.LINE}',
-            'padding': padding, 'height': '100%',
+            'background': bg,
+            'border': f'1px solid {T.LINE}',
+            'borderRadius': '6px',
+            'padding': padding,
+            'height': '100%',
+            'boxShadow': T.SHADOW_SM,
         },
     )
 
@@ -250,21 +297,29 @@ def card(children, padding='28px'):
 def stat(label, value, sub=None, value_color=None):
     return html.Div(
         [
-            html.Div(label.upper(), style={
-                'fontSize': '11px', 'letterSpacing': '0.12em', 'fontWeight': 600,
-                'color': T.INK_FAINT, 'marginBottom': '14px',
-            }),
-            html.Div(value, style={
-                'fontSize': '36px', 'fontWeight': 600, 'letterSpacing': '-0.02em',
-                'color': value_color or T.INK, 'lineHeight': 1, 'marginBottom': '8px',
+            html.Div(label.upper(), className='eyebrow', style={'marginBottom': '18px'}),
+            html.Div(value, className='stat-value', style={
+                'fontSize': '42px',
+                'fontWeight': 500,
+                'color': value_color or T.INK,
+                'lineHeight': 1,
+                'marginBottom': '10px',
+                'fontFamily': T.FONT_DISPLAY,
             }),
             html.Div(sub or '', style={
-                'fontSize': '13px', 'color': T.INK_SOFT, 'lineHeight': 1.4,
+                'fontSize': '13px', 'color': T.INK_SOFT, 'lineHeight': 1.45,
             }),
         ],
+        className='lift',
         style={
-            'background': T.BG, 'border': f'1px solid {T.LINE}',
-            'padding': '28px', 'height': '100%',
+            'background': T.PANEL_RAISED,
+            'border': f'1px solid {T.LINE}',
+            'borderRadius': '6px',
+            'padding': '30px',
+            'height': '100%',
+            'boxShadow': T.SHADOW_SM,
+            'position': 'relative',
+            'overflow': 'hidden',
         },
     )
 
@@ -274,25 +329,69 @@ def verdict_panel(level, headline, body):
     bg = {'green': T.OK_SOFT, 'amber': T.WARN_SOFT, 'red': T.ALERT_SOFT}[level]
     return html.Div(
         [
-            html.Div(headline, style={
-                'fontSize': '22px', 'fontWeight': 600, 'color': color,
-                'marginBottom': '10px', 'letterSpacing': '-0.01em',
-            }),
+            html.Div(
+                [
+                    html.Span(className='pulse-dot', style={
+                        'background': color, 'marginRight': '12px',
+                        'verticalAlign': 'middle',
+                    }),
+                    html.Span(headline, style={
+                        'fontSize': '22px', 'fontWeight': 600, 'color': color,
+                        'letterSpacing': '-0.012em',
+                        'fontFamily': T.FONT_DISPLAY,
+                    }),
+                ],
+                style={'marginBottom': '12px', 'display': 'flex', 'alignItems': 'center'},
+            ),
             html.Div(body, style={
-                'fontSize': '15px', 'color': T.INK, 'lineHeight': 1.55,
+                'fontSize': '15px', 'color': T.INK, 'lineHeight': 1.6,
             }),
         ],
         style={
-            'background': bg, 'borderLeft': f'3px solid {color}',
+            'background': bg,
+            'borderLeft': f'3px solid {color}',
+            'borderRadius': '6px',
             'padding': '24px 28px',
+            'animation': f'reveal 500ms {T.EASE_OUT} both',
         },
     )
 
 
-def divider(margin='48px'):
-    return html.Div(style={
-        'height': '1px', 'background': T.LINE, 'margin': f'{margin} 0',
-    })
+def _comparison_card(label, value, value_sub, description, value_color):
+    return html.Div(
+        [
+            html.Div(label.upper(), className='eyebrow', style={'marginBottom': '22px'}),
+            html.Div(value, className='stat-value', style={
+                'fontSize': '64px',
+                'fontWeight': 500,
+                'color': value_color,
+                'lineHeight': 0.95,
+                'marginBottom': '8px',
+                'fontFamily': T.FONT_DISPLAY,
+            }),
+            html.Div(value_sub, className='eyebrow', style={'marginBottom': '24px'}),
+            html.Div(className='rule', style={'marginBottom': '20px'}),
+            html.Div(description, style={
+                'fontSize': '14px', 'color': T.INK_SOFT, 'lineHeight': 1.6,
+            }),
+        ],
+        className='lift',
+        style={
+            'background': T.PANEL_RAISED,
+            'border': f'1px solid {T.LINE}',
+            'borderRadius': '6px',
+            'padding': '32px',
+            'height': '100%',
+            'boxShadow': T.SHADOW_SM,
+        },
+    )
+
+
+def divider(margin='56px'):
+    return html.Div(
+        className='rule',
+        style={'margin': f'{margin} 0'},
+    )
 
 
 def graph(figure, height=420, **kwargs):
@@ -390,40 +489,82 @@ def classify_recommendation(sm_now, sm_pred):
 # ── HOME ─────────────────────────────────────────────────────────────
 
 def page_home():
-    # Hero
+    # Hero — display serif with italic accent, staggered reveal
     hero = html.Div(
         [
-            section_label('ENGG2112  ·  Data Farmers'),
-            html.H1(
-                'A 7-day drought warning system',
-                style={
-                    'fontSize': '54px', 'fontWeight': 600, 'letterSpacing': '-0.03em',
-                    'color': T.INK, 'lineHeight': 1.05, 'marginBottom': '24px',
-                    'maxWidth': '900px',
-                },
+            html.Div(
+                [
+                    html.Span(className='pulse-dot', style={
+                        'marginRight': '12px', 'verticalAlign': 'middle',
+                    }),
+                    html.Span('ENGG2112 · DATA FARMERS · 2026', className='eyebrow eyebrow-accent', style={
+                        'verticalAlign': 'middle',
+                    }),
+                ],
+                className='reveal reveal-1',
+                style={'marginBottom': '28px', 'display': 'flex', 'alignItems': 'center'},
             ),
-            html.P(
-                'The core model predicts whether currently healthy soil will enter drought stress '
-                'around one week from now. A second drought-state model then scans later days to '
-                'estimate whether the event is likely to be short-lived or persistent.',
-                style={
-                    'fontSize': '19px', 'color': T.INK_SOFT, 'lineHeight': 1.55,
-                    'maxWidth': '780px', 'marginBottom': 0,
-                },
+            html.Div(
+                html.H1(
+                    [
+                        'A 7-day ',
+                        html.Em('drought'),
+                        html.Br(),
+                        'warning system.',
+                    ],
+                    className='display',
+                    style={
+                        'fontSize': 'clamp(48px, 6.4vw, 76px)',
+                        'color': T.INK,
+                        'margin': '0 0 32px 0',
+                        'maxWidth': '1000px',
+                    },
+                ),
+                className='reveal reveal-2',
             ),
+            html.Div(
+                html.P(
+                    [
+                        'The core model predicts whether currently healthy soil will enter ',
+                        html.Span('drought stress', style={
+                            'color': T.INK, 'fontWeight': 500,
+                            'borderBottom': f'1px solid {T.ACCENT}',
+                            'paddingBottom': '1px',
+                        }),
+                        ' around one week from now. A second drought-state model then scans '
+                        'later days to estimate whether the event is likely to be short-lived '
+                        'or persistent.',
+                    ],
+                    style={
+                        'fontSize': '20px', 'color': T.INK_SOFT, 'lineHeight': 1.55,
+                        'maxWidth': '780px', 'margin': 0, 'fontWeight': 400,
+                    },
+                ),
+                className='reveal reveal-3',
+            ),
+            html.Div(className='rule reveal reveal-4', style={'marginTop': '48px'}),
         ],
-        style={'marginBottom': '64px'},
+        style={'marginBottom': '72px'},
     )
 
-    # Stat row
-    stats = dbc.Row(
-        [
-            dbc.Col(stat('Sensor stations', '48', 'Kenya, Uganda, Rwanda'), md=3),
-            dbc.Col(stat('Onset window', '168-192h', '7-day warning with 24h tolerance'), md=3),
-            dbc.Col(stat('State windows', '24h', 'scanned forward for duration', T.SIGNAL), md=3),
-            dbc.Col(stat('Drought events caught', '99%', 'linear trend baseline catches 52%', T.ACCENT), md=3),
-        ],
-        className='gx-4 gy-4',
+    # Stat row — staggered reveal, reflecting the onset + state pipeline
+    stats = html.Div(
+        dbc.Row(
+            [
+                dbc.Col(html.Div(stat('Sensor stations', '48', 'Kenya, Uganda, Rwanda'),
+                                 className='reveal reveal-2'), md=3),
+                dbc.Col(html.Div(stat('Onset window', '168–192h',
+                                      '7-day warning with 24h tolerance'),
+                                 className='reveal reveal-3'), md=3),
+                dbc.Col(html.Div(stat('State windows', '24h',
+                                      'scanned forward for duration', T.SIGNAL),
+                                 className='reveal reveal-4'), md=3),
+                dbc.Col(html.Div(stat('Drought events caught', '99%',
+                                      'linear trend baseline catches 52%', T.ACCENT),
+                                 className='reveal reveal-5'), md=3),
+            ],
+            className='gx-4 gy-4',
+        ),
     )
 
     system_section = html.Div(
@@ -491,19 +632,29 @@ def page_home():
         style={'marginTop': '64px'},
     )
 
-    # Why this matters columns
+    # Why this matters columns — numbered, editorial
     why_col = lambda label, title, body: html.Div(
         [
-            section_label(label),
+            html.Div(label, style={
+                'fontFamily': T.FONT_MONO,
+                'fontSize': '12px',
+                'letterSpacing': '0.18em',
+                'color': T.ACCENT,
+                'fontWeight': 500,
+                'marginBottom': '20px',
+                'paddingBottom': '14px',
+                'borderBottom': f'1px solid {T.LINE}',
+            }),
             html.H3(title, style={
-                'fontSize': '18px', 'fontWeight': 600, 'color': T.INK,
-                'marginBottom': '12px', 'letterSpacing': '-0.01em',
+                'fontSize': '20px', 'fontWeight': 500, 'color': T.INK,
+                'marginBottom': '14px', 'letterSpacing': '-0.012em',
+                'fontFamily': T.FONT_DISPLAY, 'lineHeight': 1.25,
             }),
             html.P(body, style={
-                'fontSize': '14px', 'color': T.INK_SOFT, 'lineHeight': 1.55, 'marginBottom': 0,
+                'fontSize': '14.5px', 'color': T.INK_SOFT, 'lineHeight': 1.6, 'marginBottom': 0,
             }),
         ],
-        style={'paddingRight': '24px'},
+        style={'paddingRight': '32px'},
     )
 
     why = html.Div(
@@ -1030,7 +1181,7 @@ def page_results():
             x=_models_list,
             y=_hi_catch['False alarm events'],
             marker_color=_colors_bar, marker_line_width=0,
-            text=[str(int(v)) for v in _hi_catch['False alarm events']],
+            text=[str(int(v)) if pd.notna(v) else '' for v in _hi_catch['False alarm events']],
             textposition='outside', textfont=dict(size=13, color=T.INK_SOFT),
             showlegend=False,
         ), row=1, col=2)
@@ -1060,7 +1211,7 @@ def page_results():
             ]
         )
 
-    # Duration / drought-state extension
+    # Duration / drought-state extension — three-step pipeline
     duration_section = html.Div(
         [
             section_title(
@@ -1071,9 +1222,15 @@ def page_results():
             ),
             dbc.Row(
                 [
-                    dbc.Col(stat('Step 1', 'Onset', 'warns for drought in the 168-192h window', T.ACCENT), md=4),
-                    dbc.Col(stat('Step 2', 'State scan', 'checks later 24h windows with RF/XGBoost', T.SIGNAL), md=4),
-                    dbc.Col(stat('Step 3', 'Duration', 'stops after sustained predicted recovery', T.OK), md=4),
+                    dbc.Col(html.Div(stat('Step 1', 'Onset',
+                                          'warns for drought in the 168–192h window', T.ACCENT),
+                                     className='reveal reveal-1'), md=4),
+                    dbc.Col(html.Div(stat('Step 2', 'State scan',
+                                          'checks later 24h windows with RF/XGBoost', T.SIGNAL),
+                                     className='reveal reveal-2'), md=4),
+                    dbc.Col(html.Div(stat('Step 3', 'Duration',
+                                          'stops after sustained predicted recovery', T.OK),
+                                     className='reveal reveal-3'), md=4),
                 ],
                 className='gx-4 gy-4',
             ),
@@ -1082,40 +1239,83 @@ def page_results():
                 'inside each future day. Running those predictions forward lets the app turn a warning into '
                 'a practical duration bucket such as short, moderate, long, or extended.',
                 style={
-                    'fontSize': '14px', 'color': T.INK_SOFT, 'lineHeight': 1.6,
-                    'marginTop': '20px', 'paddingLeft': '16px',
-                    'borderLeft': f'2px solid {T.LINE}',
+                    'fontSize': '14.5px', 'color': T.INK_SOFT, 'lineHeight': 1.65,
+                    'marginTop': '24px', 'paddingLeft': '20px',
+                    'borderLeft': f'2px solid {T.ACCENT}',
+                    'maxWidth': '780px',
                 },
             ),
         ],
-        style={'marginTop': '80px'},
+        style={'marginTop': '88px'},
     )
 
-    # Economic value calculator
+    # Economic value / scale calculator
     economic_section = html.Div(
         [
-            section_title('What this means in dollars',
-                          'A back-of-envelope estimate of how much yield the model could protect, '
-                          'based on FAO maize yield-loss methodology.'),
+            section_title(
+                'But can\'t a farmer just guess?',
+                'Three baselines, one honest answer.',
+            ),
+            # Comparison table — baselines vs model
+            dbc.Row(
+                [
+                    dbc.Col(_comparison_card(
+                        'Persistence', '0%',
+                        'catch rate on true onset events',
+                        'Assumes nothing changes. Blind to any transition by construction.',
+                        T.INK_FAINT,
+                    ), md=4),
+                    dbc.Col(_comparison_card(
+                        'Linear trend baseline', '50%',
+                        'catch rate on true onset events',
+                        'Flags when soil has been falling steadily for several days. A reasonable human heuristic.',
+                        T.SIGNAL,
+                    ), md=4),
+                    dbc.Col(_comparison_card(
+                        'Our model', '97%',
+                        'catch rate on true onset events',
+                        'Trained on soil history, weather, station context. Nearly doubles the smart baseline.',
+                        T.ACCENT,
+                    ), md=4),
+                ],
+                className='gx-4 gy-4',
+            ),
+            html.Div(style={'height': '56px'}),
+            section_title(
+                'Scale it up',
+                'One farm is $66/year. The real question is what happens at scale.',
+            ),
             dbc.Row(
                 [
                     dbc.Col(
                         [
-                            html.Div('Drought onset events per growing season',
-                                     style={'fontSize': '14px', 'color': T.INK_SOFT, 'marginBottom': '12px'}),
-                            dcc.Slider(id='econ-events-slider', min=1, max=6, value=3, step=1,
-                                       marks={i: str(i) for i in range(1, 7)},
-                                       tooltip={'always_visible': False}),
-                            html.Div(style={'height': '32px'}),
-                            html.Div('Farm size (hectares)',
-                                     style={'fontSize': '14px', 'color': T.INK_SOFT, 'marginBottom': '12px'}),
-                            dcc.Slider(id='econ-farm-slider', min=0.5, max=5.0, value=1.0, step=0.5,
-                                       marks={i: str(i) for i in [1, 2, 3, 4, 5]},
-                                       tooltip={'always_visible': False}),
+                            html.Div(
+                                'Number of farms using the system',
+                                style={'fontSize': '14px', 'color': T.INK_SOFT, 'marginBottom': '12px'},
+                            ),
+                            dcc.Slider(
+                                id='econ-farms-slider',
+                                min=0, max=5, value=2, step=1,
+                                marks={
+                                    0: '100',
+                                    1: '1,000',
+                                    2: '10,000',
+                                    3: '100,000',
+                                    4: '1M',
+                                    5: '3M',
+                                },
+                                tooltip={'always_visible': False},
+                            ),
+                            html.Div(
+                                'Based on 1.5 ha average farm, 1.6 drought onset events/year, '
+                                'FAO maize yield-response factor (Ky = 1.25).',
+                                style={'fontSize': '12px', 'color': T.INK_FAINT,
+                                       'lineHeight': 1.5, 'marginTop': '20px'},
+                            ),
                         ],
-                        md=6,
+                        md=5,
                     ),
-                    dbc.Col(html.Div(id='econ-result'), md=6),
+                    dbc.Col(html.Div(id='econ-result'), md=7),
                 ],
                 className='gx-5 gy-4',
             ),
@@ -1394,58 +1594,114 @@ NAV_ITEMS = [
 
 
 def sidebar():
-    return html.Div(
-        [
+    nav_links = []
+    for idx, (page_id, nav_label) in enumerate(NAV_ITEMS):
+        num = f'0{idx + 1}'
+        nav_links.append(
             html.Div(
                 [
-                    html.Div('DROUGHT WARNING', style={
-                        'fontSize': '11px', 'letterSpacing': '0.2em',
-                        'color': T.INK_FAINT, 'fontWeight': 600,
+                    html.Span(num, style={
+                        'fontFamily': T.FONT_MONO, 'fontSize': '10px',
+                        'color': T.INK_FAINT, 'marginRight': '14px',
+                        'letterSpacing': '0.06em', 'fontWeight': 500,
                     }),
-                    html.Div('Data Farmers', style={
-                        'fontSize': '22px', 'fontWeight': 600, 'color': T.INK,
-                        'letterSpacing': '-0.01em', 'marginTop': '4px',
-                    }),
+                    html.Span(nav_label, style={'fontFamily': T.FONT}),
                 ],
-                style={'marginBottom': '48px', 'padding': '36px 32px 0 32px'},
-            ),
+                id={'type': 'nav-link', 'page': page_id},
+                n_clicks=0,
+                className='nav-link-item',
+                style={
+                    'padding': '13px 32px',
+                    'fontSize': '14px',
+                    'color': T.INK_SOFT,
+                    'cursor': 'pointer',
+                    'fontWeight': 500,
+                    'display': 'flex',
+                    'alignItems': 'center',
+                },
+            )
+        )
+
+    return html.Div(
+        [
+            # Wordmark
             html.Div(
                 [
                     html.Div(
-                        nav_label,
-                        id={'type': 'nav-link', 'page': page_id},
-                        n_clicks=0,
-                        className='nav-link-item',
-                        style={
-                            'padding': '12px 32px',
-                            'fontSize': '14px', 'color': T.INK_SOFT,
-                            'cursor': 'pointer', 'borderLeft': '3px solid transparent',
-                            'fontFamily': T.FONT, 'fontWeight': 500,
-                            'transition': 'all 0.15s ease',
-                        },
-                    )
-                    for page_id, nav_label in NAV_ITEMS
+                        [
+                            html.Span(className='pulse-dot', style={
+                                'background': T.OK, 'marginRight': '10px',
+                                'verticalAlign': 'middle', 'width': '6px', 'height': '6px',
+                            }),
+                            html.Span('LIVE', style={
+                                'fontFamily': T.FONT_MONO, 'fontSize': '10px',
+                                'letterSpacing': '0.18em', 'color': T.OK, 'fontWeight': 600,
+                                'verticalAlign': 'middle',
+                            }),
+                        ],
+                        style={'marginBottom': '18px'},
+                    ),
+                    html.Div('Drought', className='display', style={
+                        'fontSize': '28px', 'color': T.INK,
+                        'lineHeight': 1, 'letterSpacing': '-0.025em',
+                    }),
+                    html.Div([
+                        html.Span('warning', style={
+                            'fontFamily': T.FONT_DISPLAY,
+                            'fontStyle': 'italic',
+                            'fontWeight': 400,
+                            'color': T.ACCENT,
+                            'fontSize': '28px',
+                            'letterSpacing': '-0.02em',
+                        }),
+                    ], style={'lineHeight': 1, 'marginTop': '2px'}),
+                    html.Div('System', style={
+                        'fontFamily': T.FONT_MONO,
+                        'fontSize': '11px',
+                        'letterSpacing': '0.22em',
+                        'color': T.INK_FAINT,
+                        'marginTop': '14px',
+                        'textTransform': 'uppercase',
+                    }),
                 ],
+                style={'padding': '40px 32px 44px 32px', 'borderBottom': f'1px solid {T.LINE_SOFT}'},
             ),
+
+            # Nav block
+            html.Div(nav_links, style={'paddingTop': '24px'}),
+
+            # Footer brand
             html.Div(
                 [
+                    html.Div(className='rule', style={'marginBottom': '20px'}),
                     html.Div('ENGG2112', style={
-                        'fontSize': '10px', 'letterSpacing': '0.2em', 'color': T.INK_FAINT,
+                        'fontFamily': T.FONT_MONO,
+                        'fontSize': '10px',
+                        'letterSpacing': '0.22em',
+                        'color': T.INK_FAINT,
                         'fontWeight': 600,
                     }),
-                    html.Div('Data Farmers · 2026', style={
-                        'fontSize': '12px', 'color': T.INK_FAINT, 'marginTop': '4px',
+                    html.Div('Data Farmers', style={
+                        'fontSize': '13px', 'color': T.INK_SOFT, 'marginTop': '6px',
+                        'fontWeight': 500,
+                    }),
+                    html.Div('Sydney · MMXXVI', style={
+                        'fontFamily': T.FONT_MONO,
+                        'fontSize': '10px', 'color': T.INK_FAINT, 'marginTop': '3px',
+                        'letterSpacing': '0.08em',
                     }),
                 ],
-                style={'position': 'absolute', 'bottom': '36px', 'left': '32px'},
+                style={'position': 'absolute', 'bottom': '32px', 'left': '32px', 'right': '32px'},
             ),
         ],
         style={
             'position': 'fixed', 'left': 0, 'top': 0, 'bottom': 0,
-            'width': '240px', 'background': T.PANEL,   # white sidebar on warm BG
+            'width': '252px',
+            'background': T.PANEL,
             'borderRight': f'1px solid {T.LINE}',
             'fontFamily': T.FONT,
-            'boxShadow': '2px 0 8px rgba(0,0,0,0.04)',
+            'boxShadow': '1px 0 0 rgba(40, 30, 20, 0.02)',
+            'overflow': 'hidden',
         },
     )
 
@@ -1454,7 +1710,7 @@ app = Dash(
     __name__,
     external_stylesheets=[
         dbc.themes.BOOTSTRAP,
-        'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap',
+        'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500&display=swap',
     ],
     suppress_callback_exceptions=True,
     title='Drought Warning System',
@@ -1470,47 +1726,269 @@ app.index_string = '''
         {%favicon%}
         {%css%}
         <style>
+            :root {
+                --ink: ''' + T.INK + ''';
+                --ink-soft: ''' + T.INK_SOFT + ''';
+                --ink-faint: ''' + T.INK_FAINT + ''';
+                --line: ''' + T.LINE + ''';
+                --line-soft: ''' + T.LINE_SOFT + ''';
+                --panel: ''' + T.PANEL + ''';
+                --panel-raised: ''' + T.PANEL_RAISED + ''';
+                --bg: ''' + T.BG + ''';
+                --bg-deep: ''' + T.BG_DEEP + ''';
+                --accent: ''' + T.ACCENT + ''';
+                --accent-deep: ''' + T.ACCENT_DEEP + ''';
+                --accent-soft: ''' + T.ACCENT_SOFT + ''';
+                --accent-glow: ''' + T.ACCENT_GLOW + ''';
+                --signal: ''' + T.SIGNAL + ''';
+                --shadow-sm: ''' + T.SHADOW_SM + ''';
+                --shadow-md: ''' + T.SHADOW_MD + ''';
+                --shadow-lg: ''' + T.SHADOW_LG + ''';
+                --ease-out: ''' + T.EASE_OUT + ''';
+                --ease-inout: ''' + T.EASE_INOUT + ''';
+                --ease-drawer: ''' + T.EASE_DRAWER + ''';
+                --dur-fast: ''' + T.DUR_FAST + ''';
+                --dur-base: ''' + T.DUR_BASE + ''';
+                --dur-slow: ''' + T.DUR_SLOW + ''';
+                --font: ''' + T.FONT + ''';
+                --font-display: ''' + T.FONT_DISPLAY + ''';
+                --font-mono: ''' + T.FONT_MONO + ''';
+            }
+
             * { box-sizing: border-box; }
-            html, body { margin: 0; padding: 0; background: ''' + T.BG + '''; }  /* warm parchment BG */
-            body { font-family: ''' + T.FONT + '''; color: ''' + T.INK + '''; line-height: 1.5;
-                   -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-            .nav-link-item:hover { color: ''' + T.INK + '''; background: ''' + T.LINE_SOFT + '''; }
+            html, body { margin: 0; padding: 0; background: var(--bg); }
+            body {
+                font-family: var(--font);
+                color: var(--ink);
+                line-height: 1.5;
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+                text-rendering: optimizeLegibility;
+                font-feature-settings: "cv11", "ss01", "ss03";
+            }
+
+            /* The whole content surface fades up on first mount */
+            #page-content {
+                animation: pageEnter 520ms var(--ease-out) both;
+            }
+            @keyframes pageEnter {
+                0%   { opacity: 0; transform: translateY(8px); filter: blur(2px); }
+                100% { opacity: 1; transform: translateY(0);   filter: blur(0); }
+            }
+
+            /* Reveal utility — children stagger in */
+            .reveal { animation: reveal 600ms var(--ease-out) both; }
+            .reveal-1 { animation-delay: 40ms; }
+            .reveal-2 { animation-delay: 90ms; }
+            .reveal-3 { animation-delay: 140ms; }
+            .reveal-4 { animation-delay: 190ms; }
+            .reveal-5 { animation-delay: 240ms; }
+            .reveal-6 { animation-delay: 290ms; }
+            @keyframes reveal {
+                0%   { opacity: 0; transform: translateY(10px); }
+                100% { opacity: 1; transform: translateY(0); }
+            }
+
+            /* Sidebar — refined hover with sliding indicator */
+            .nav-link-item {
+                position: relative;
+                transition: color var(--dur-base) var(--ease-out),
+                            background var(--dur-base) var(--ease-out),
+                            padding-left var(--dur-base) var(--ease-out);
+            }
+            .nav-link-item::before {
+                content: "";
+                position: absolute;
+                left: 0; top: 50%;
+                width: 2px; height: 0;
+                background: var(--accent);
+                transform: translateY(-50%);
+                transition: height var(--dur-base) var(--ease-out);
+            }
+            @media (hover: hover) and (pointer: fine) {
+                .nav-link-item:hover {
+                    color: var(--ink) !important;
+                    background: var(--line-soft);
+                    padding-left: 36px !important;
+                }
+                .nav-link-item:hover::before { height: 14px; }
+            }
+            .nav-link-item:active { transform: scale(0.99); }
             .nav-link-item.active {
-                color: ''' + T.ACCENT + ''' !important;
-                border-left: 3px solid ''' + T.ACCENT + ''' !important;
+                color: var(--accent) !important;
                 font-weight: 600 !important;
-                background: ''' + T.BG + ''' !important;
+                background: var(--bg) !important;
+                padding-left: 36px !important;
             }
+            .nav-link-item.active::before { height: 22px; }
+
+            /* Cards — quiet lift on hover (only where opted-in via .lift) */
+            .lift {
+                transition: transform var(--dur-base) var(--ease-out),
+                            box-shadow var(--dur-base) var(--ease-out),
+                            border-color var(--dur-base) var(--ease-out);
+                will-change: transform;
+            }
+            @media (hover: hover) and (pointer: fine) {
+                .lift:hover {
+                    transform: translateY(-2px);
+                    box-shadow: var(--shadow-md);
+                    border-color: #D6D0C5;
+                }
+            }
+
+            /* Pressable feedback */
+            .press {
+                transition: transform var(--dur-fast) var(--ease-out);
+            }
+            .press:active { transform: scale(0.985); }
+
+            /* Number ticker — looks alive without animating constantly */
+            .stat-value {
+                font-feature-settings: "tnum" 1, "ss01" 1;
+                letter-spacing: -0.025em;
+            }
+
+            /* Display serif headings */
+            .display {
+                font-family: var(--font-display);
+                font-weight: 500;
+                font-optical-sizing: auto;
+                font-variation-settings: "opsz" 96, "SOFT" 50;
+                letter-spacing: -0.028em;
+                line-height: 1.02;
+            }
+            .display em {
+                font-style: italic;
+                font-weight: 400;
+                color: var(--accent);
+                font-variation-settings: "opsz" 144, "SOFT" 100;
+            }
+
+            /* Eyebrow / mono tag */
+            .eyebrow {
+                font-family: var(--font-mono);
+                font-size: 11px;
+                font-weight: 500;
+                letter-spacing: 0.16em;
+                text-transform: uppercase;
+                color: var(--ink-faint);
+            }
+            .eyebrow-accent { color: var(--accent); }
+
+            /* Accent pulse — used sparingly on the hero status dot */
+            .pulse-dot {
+                display: inline-block;
+                width: 8px; height: 8px;
+                border-radius: 50%;
+                background: var(--accent);
+                position: relative;
+                box-shadow: 0 0 0 0 var(--accent-glow);
+                animation: pulseDot 2.4s var(--ease-inout) infinite;
+            }
+            @keyframes pulseDot {
+                0%   { box-shadow: 0 0 0 0    var(--accent-glow); }
+                70%  { box-shadow: 0 0 0 12px rgba(184, 82, 31, 0); }
+                100% { box-shadow: 0 0 0 0    rgba(184, 82, 31, 0); }
+            }
+
             /* Slider styling */
-            .rc-slider-track { background: ''' + T.ACCENT + ''' !important; }
-            .rc-slider-rail  { background: ''' + T.LINE + ''' !important; }
+            .rc-slider-track { background: var(--accent) !important; transition: background var(--dur-base) var(--ease-out); }
+            .rc-slider-rail  { background: var(--line) !important; }
             .rc-slider-handle {
-                border-color: ''' + T.ACCENT + ''' !important;
-                background: ''' + T.BG + ''' !important;
-                box-shadow: none !important;
+                border-color: var(--accent) !important;
+                background: var(--panel-raised) !important;
+                box-shadow: var(--shadow-sm) !important;
+                transition: box-shadow var(--dur-base) var(--ease-out),
+                            transform var(--dur-base) var(--ease-out) !important;
             }
-            .rc-slider-handle:active, .rc-slider-handle:hover, .rc-slider-handle:focus {
-                border-color: ''' + T.ACCENT + ''' !important;
-                box-shadow: 0 0 0 4px ''' + T.ACCENT_SOFT + ''' !important;
+            .rc-slider-handle:hover {
+                box-shadow: 0 0 0 6px var(--accent-glow), var(--shadow-sm) !important;
             }
-            .rc-slider-dot-active { border-color: ''' + T.ACCENT + ''' !important; }
-            .rc-slider-mark-text { color: ''' + T.INK_FAINT + ''' !important; font-size: 11px !important;
-                                   font-family: ''' + T.FONT + ''' !important; }
+            .rc-slider-handle:active,
+            .rc-slider-handle:focus {
+                box-shadow: 0 0 0 8px var(--accent-glow), var(--shadow-md) !important;
+                transform: scale(1.08) translate(-50%, -50%) !important;
+            }
+            .rc-slider-dot-active { border-color: var(--accent) !important; }
+            .rc-slider-mark-text {
+                color: var(--ink-faint) !important;
+                font-size: 11px !important;
+                font-family: var(--font-mono) !important;
+                letter-spacing: 0.04em;
+            }
+
             /* Dropdown styling */
             .Select-control, .dash-dropdown .Select-control {
-                border: 1px solid ''' + T.LINE + ''' !important;
-                border-radius: 0 !important;
-                background: ''' + T.BG + ''' !important;
-                min-height: 40px !important;
+                border: 1px solid var(--line) !important;
+                border-radius: 4px !important;
+                background: var(--panel-raised) !important;
+                min-height: 42px !important;
+                transition: border-color var(--dur-base) var(--ease-out),
+                            box-shadow var(--dur-base) var(--ease-out);
             }
-            .Select-control:hover { border-color: ''' + T.INK_FAINT + ''' !important; }
+            .Select-control:hover { border-color: var(--ink-faint) !important; }
             .is-focused:not(.is-open) > .Select-control {
-                border-color: ''' + T.ACCENT + ''' !important;
-                box-shadow: none !important;
+                border-color: var(--accent) !important;
+                box-shadow: 0 0 0 4px var(--accent-glow) !important;
             }
-            .Select-menu-outer { border-radius: 0 !important; border-color: ''' + T.LINE + ''' !important; }
-            .VirtualizedSelectFocusedOption { background: ''' + T.PANEL + ''' !important; }
-            ::selection { background: ''' + T.ACCENT_SOFT + '''; }
+            .Select-menu-outer {
+                border-radius: 4px !important;
+                border-color: var(--line) !important;
+                box-shadow: var(--shadow-md) !important;
+                margin-top: 4px !important;
+                animation: dropdown 200ms var(--ease-out) both;
+                transform-origin: top center;
+            }
+            @keyframes dropdown {
+                0%   { opacity: 0; transform: scale(0.97) translateY(-4px); }
+                100% { opacity: 1; transform: scale(1)    translateY(0); }
+            }
+            .Select-option { transition: background var(--dur-fast) var(--ease-out); }
+            .VirtualizedSelectFocusedOption { background: var(--bg) !important; color: var(--ink) !important; }
+
+            /* Buttons */
+            button, .btn {
+                transition: transform var(--dur-fast) var(--ease-out),
+                            background var(--dur-base) var(--ease-out),
+                            box-shadow var(--dur-base) var(--ease-out) !important;
+            }
+            button:active, .btn:active { transform: scale(0.975); }
+            button:focus-visible, .btn:focus-visible {
+                outline: none;
+                box-shadow: 0 0 0 4px var(--accent-glow) !important;
+            }
+
+            /* Selection */
+            ::selection { background: var(--accent-soft); color: var(--ink); }
+
+            /* Hairline underline used in section headers */
+            .rule {
+                height: 1px;
+                background: linear-gradient(to right, var(--line) 0%, var(--line) 70%, transparent 100%);
+            }
+
+            /* Plotly graph chrome — drop the modebar shadow on hover */
+            .js-plotly-plot .plotly { transition: opacity var(--dur-base) var(--ease-out); }
+
+            /* Scrollbar — subtle, on-brand */
+            ::-webkit-scrollbar { width: 10px; height: 10px; }
+            ::-webkit-scrollbar-track { background: transparent; }
+            ::-webkit-scrollbar-thumb {
+                background: var(--line);
+                border-radius: 10px;
+                border: 2px solid var(--bg);
+            }
+            ::-webkit-scrollbar-thumb:hover { background: var(--ink-faint); }
+
+            /* prefers-reduced-motion — keep fades, drop movement */
+            @media (prefers-reduced-motion: reduce) {
+                *, *::before, *::after {
+                    animation-duration: 0.001ms !important;
+                    transition-duration: 0.001ms !important;
+                }
+                #page-content { animation: none !important; }
+            }
         </style>
     </head>
     <body>
@@ -1533,14 +2011,17 @@ app.layout = html.Div(
                 id='page-content',
                 style={
                     'background': T.PANEL,
-                    'padding': '72px 80px',
+                    'padding': '80px 88px',
                     'minHeight': '100vh',
+                    'borderRadius': '8px',
+                    'boxShadow': T.SHADOW_LG,
+                    'border': f'1px solid {T.LINE_SOFT}',
                 },
             ),
             style={
-                'marginLeft': '240px',
-                'padding': '24px 32px 48px 32px',
-                'maxWidth': '1260px',
+                'marginLeft': '252px',
+                'padding': '28px 36px 56px 36px',
+                'maxWidth': '1320px',
                 'fontFamily': T.FONT,
             },
         ),
@@ -1974,31 +2455,89 @@ def update_demo_forecast(station, slider_pct):
 
 @app.callback(
     Output('econ-result', 'children'),
-    Input('econ-events-slider', 'value'),
-    Input('econ-farm-slider', 'value'),
+    Input('econ-farms-slider', 'value'),
 )
-def econ_calc(events, farm_size):
-    catch_gap = 0.575 - 0.455
-    per_event_per_ha = 28.80
-    value = events * catch_gap * per_event_per_ha * farm_size
-    return html.Div(
+def econ_calc(slider_pos):
+    # Slider positions map to farm counts
+    farm_counts = [100, 1_000, 10_000, 100_000, 1_000_000, 3_000_000]
+    n_farms = farm_counts[int(slider_pos)]
+
+    # Constants (FAO-based)
+    avg_farm_ha        = 1.5      # average East Africa smallholder farm
+    events_per_year    = 1.6      # onset events per station per year (from test 10 data)
+    per_event_per_ha   = 28.80    # FAO maize: Ky=1.25, 8% yield loss @ $360/ha revenue
+    model_catch        = 0.97     # from test 12 dedicated classifier
+    baseline_catch     = 0.50     # linear trend baseline (test 13)
+    revenue_per_ha     = 360      # $/ha/season (maize, East Africa)
+
+    value_per_farm     = events_per_year * model_catch * per_event_per_ha * avg_farm_ha
+    baseline_per_farm  = events_per_year * baseline_catch * per_event_per_ha * avg_farm_ha
+    season_revenue     = revenue_per_ha * avg_farm_ha
+    pct_revenue        = value_per_farm / season_revenue * 100
+
+    total_model        = value_per_farm * n_farms
+    total_baseline     = baseline_per_farm * n_farms
+    extra_vs_baseline  = (value_per_farm - baseline_per_farm) * n_farms
+
+    def _fmt(v):
+        if v >= 1_000_000: return f'${v/1_000_000:.1f}M'
+        if v >= 1_000:     return f'${v/1_000:.0f}K'
+        return f'${v:.0f}'
+
+    farm_label = f'{n_farms:,}'
+
+    return dbc.Row(
         [
-            section_label('Estimated yield protected'),
-            html.Div(
-                f'${value:.0f}',
-                style={
-                    'fontSize': '64px', 'fontWeight': 600, 'letterSpacing': '-0.03em',
-                    'color': T.ACCENT, 'lineHeight': 1, 'marginBottom': '12px',
-                },
-            ),
-            html.Div(
-                f'per growing season on a {farm_size:.1f}-hectare farm experiencing '
-                f'{events} onset events. Based on FAO maize yield-response methodology.',
-                style={'fontSize': '14px', 'color': T.INK_SOFT, 'lineHeight': 1.55,
-                       'maxWidth': '320px'},
-            ),
+            dbc.Col(html.Div(
+                [
+                    html.Div('Per farm, per year', style={
+                        'fontSize': '11px', 'letterSpacing': '0.12em', 'fontWeight': 600,
+                        'color': T.INK_FAINT, 'marginBottom': '14px',
+                    }),
+                    html.Div(f'${value_per_farm:.0f}', style={
+                        'fontSize': '48px', 'fontWeight': 700, 'letterSpacing': '-0.03em',
+                        'color': T.ACCENT, 'lineHeight': 1, 'marginBottom': '6px',
+                    }),
+                    html.Div(f'{pct_revenue:.0f}% of seasonal revenue', style={
+                        'fontSize': '14px', 'color': T.INK_SOFT,
+                    }),
+                ],
+                style={'borderLeft': f'3px solid {T.ACCENT}', 'paddingLeft': '20px'},
+            ), md=4),
+            dbc.Col(html.Div(
+                [
+                    html.Div(f'Across {farm_label} farms', style={
+                        'fontSize': '11px', 'letterSpacing': '0.12em', 'fontWeight': 600,
+                        'color': T.INK_FAINT, 'marginBottom': '14px',
+                    }),
+                    html.Div(_fmt(total_model), style={
+                        'fontSize': '48px', 'fontWeight': 700, 'letterSpacing': '-0.03em',
+                        'color': T.ACCENT, 'lineHeight': 1, 'marginBottom': '6px',
+                    }),
+                    html.Div('in yield protected per year', style={
+                        'fontSize': '14px', 'color': T.INK_SOFT,
+                    }),
+                ],
+                style={'borderLeft': f'3px solid {T.ACCENT}', 'paddingLeft': '20px'},
+            ), md=4),
+            dbc.Col(html.Div(
+                [
+                    html.Div('Vs smart baseline', style={
+                        'fontSize': '11px', 'letterSpacing': '0.12em', 'fontWeight': 600,
+                        'color': T.INK_FAINT, 'marginBottom': '14px',
+                    }),
+                    html.Div(_fmt(extra_vs_baseline), style={
+                        'fontSize': '48px', 'fontWeight': 700, 'letterSpacing': '-0.03em',
+                        'color': T.SIGNAL, 'lineHeight': 1, 'marginBottom': '6px',
+                    }),
+                    html.Div('extra protected vs linear trend baseline', style={
+                        'fontSize': '14px', 'color': T.INK_SOFT,
+                    }),
+                ],
+                style={'borderLeft': f'3px solid {T.SIGNAL}', 'paddingLeft': '20px'},
+            ), md=4),
         ],
-        style={'paddingLeft': '32px', 'borderLeft': f'2px solid {T.LINE}'},
+        className='gx-4',
     )
 
 
