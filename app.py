@@ -1,5 +1,5 @@
 """
-Soil Moisture Forecaster — Plotly Dash demo.
+Drought Warning System — Plotly Dash demo.
 ENGG2112 Data Farmers.
 
 Launch:  python app.py
@@ -395,7 +395,7 @@ def page_home():
         [
             section_label('ENGG2112  ·  Data Farmers'),
             html.H1(
-                'Will drought hit next week?',
+                'A 7-day drought warning system',
                 style={
                     'fontSize': '54px', 'fontWeight': 600, 'letterSpacing': '-0.03em',
                     'color': T.INK, 'lineHeight': 1.05, 'marginBottom': '24px',
@@ -403,9 +403,9 @@ def page_home():
                 },
             ),
             html.P(
-                'A machine-learning system that warns smallholder farmers in East Africa '
-                'about a week before their soil dries below the drought stress threshold, '
-                'then estimates whether the stress is likely to persist.',
+                'The core model predicts whether currently healthy soil will enter drought stress '
+                'around one week from now. A second drought-state model then scans later days to '
+                'estimate whether the event is likely to be short-lived or persistent.',
                 style={
                     'fontSize': '19px', 'color': T.INK_SOFT, 'lineHeight': 1.55,
                     'maxWidth': '780px', 'marginBottom': 0,
@@ -419,11 +419,38 @@ def page_home():
     stats = dbc.Row(
         [
             dbc.Col(stat('Sensor stations', '48', 'Kenya, Uganda, Rwanda'), md=3),
-            dbc.Col(stat('Hourly readings', '1.1M', 'quality-flagged "Good"'), md=3),
-            dbc.Col(stat('Warning horizon', '7 days', '168-192h onset window', T.ACCENT), md=3),
+            dbc.Col(stat('Onset window', '168-192h', '7-day warning with 24h tolerance'), md=3),
+            dbc.Col(stat('State windows', '24h', 'scanned forward for duration', T.SIGNAL), md=3),
             dbc.Col(stat('Drought events caught', '99%', 'linear trend baseline catches 52%', T.ACCENT), md=3),
         ],
         className='gx-4 gy-4',
+    )
+
+    system_section = html.Div(
+        [
+            section_title(
+                'What the system predicts',
+                'The project is now centred on drought events, not just point soil-moisture accuracy.',
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        stat('1. Onset classifier', 'Will drought start?', 'XGBoost/RF classify drought entry 7 days ahead', T.ACCENT),
+                        md=4,
+                    ),
+                    dbc.Col(
+                        stat('2. State scanner', 'Will it persist?', 'RF/XGBoost check later 24h drought-state windows', T.SIGNAL),
+                        md=4,
+                    ),
+                    dbc.Col(
+                        stat('3. Moisture forecast', 'Supporting signal', 'Regression still explains the underlying soil-moisture path', T.INK_SOFT),
+                        md=4,
+                    ),
+                ],
+                className='gx-4 gy-4',
+            ),
+        ],
+        style={'marginTop': '64px'},
     )
 
     # Example forecast chart
@@ -455,11 +482,11 @@ def page_home():
     chart_section = html.Div(
         [
             section_title(
-                'The problem in one picture',
+                'The supporting soil-moisture forecast',
                 f'Thirty days at one station ({STATION_LABELS[sample_key]}). The dotted line '
-                'is what the model would have forecast 3 days earlier.',
+                'is the older point forecast, which now supports the drought warning story rather than leading it.',
             ),
-            graph(fig, height=420),
+            graph(fig, height=340),
         ],
         style={'marginTop': '64px'},
     )
@@ -500,7 +527,7 @@ def page_home():
         style={'marginTop': '64px'},
     )
 
-    return html.Div([hero, stats, chart_section, why])
+    return html.Div([hero, stats, system_section, why, chart_section])
 
 
 # ── THE DATA ─────────────────────────────────────────────────────────
@@ -818,8 +845,8 @@ def page_models():
     )
 
     return html.Div([
-        page_title('The models', 'Four ways to forecast soil moisture',
-                   'Random Forest, XGBoost, LSTM and TFT, all trained side-by-side and benchmarked against a naive persistence baseline.'),
+        page_title('Supporting model details', 'How the soil-moisture forecaster works',
+                   'The original regression models remain useful for explaining the soil-moisture path, but the main product is now drought onset and duration warning.'),
         arch_section,
         fi_section,
         worked_section,
@@ -838,9 +865,8 @@ def page_demo():
 
     return html.Div(
         [
-            page_title('Live demo', 'Pick a farm. Pick a day. Get a forecast.',
-                       'The model gives you a 3-day soil moisture forecast and an irrigation recommendation, '
-                       'using the same XGBoost that won the benchmarks.'),
+            page_title('Moisture forecast', 'Pick a farm. Pick a day. Inspect the supporting forecast.',
+                       'This page keeps the original 3-day soil-moisture regression demo. It is now a supporting diagnostic beside the newer drought-onset warning system.'),
 
             # Step 1 — Station picker
             html.Div(
@@ -1168,8 +1194,8 @@ def page_results():
         )
 
     return html.Div([
-        page_title('Results', 'Before, after, and the trade-offs',
-                   'Drought-event detection, performance vs horizon, and the impact of adding weather features.'),
+        page_title('Onset and duration', 'The core drought-warning results',
+                   'Seven-day drought-onset detection, the new drought-state scanner, and the trade-offs behind false alarms.'),
         onset_section,
         duration_section,
         economic_section,
@@ -1358,11 +1384,11 @@ def page_conclusions():
 # ──────────────────────────────────────────────────────────────────────
 
 NAV_ITEMS = [
-    ('home',        'Home'),
+    ('home',        'Drought Warning'),
+    ('results',     'Onset + Duration'),
+    ('demo',        'Moisture Forecast'),
     ('data',        'The Data'),
-    ('models',      'The Models'),
-    ('demo',        'Live Demo'),
-    ('results',     'Results'),
+    ('models',      'Model Details'),
     ('conclusions', 'Conclusions'),
 ]
 
@@ -1372,11 +1398,11 @@ def sidebar():
         [
             html.Div(
                 [
-                    html.Div('SOIL MOISTURE', style={
+                    html.Div('DROUGHT WARNING', style={
                         'fontSize': '11px', 'letterSpacing': '0.2em',
                         'color': T.INK_FAINT, 'fontWeight': 600,
                     }),
-                    html.Div('Forecaster', style={
+                    html.Div('Data Farmers', style={
                         'fontSize': '22px', 'fontWeight': 600, 'color': T.INK,
                         'letterSpacing': '-0.01em', 'marginTop': '4px',
                     }),
@@ -1431,7 +1457,7 @@ app = Dash(
         'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap',
     ],
     suppress_callback_exceptions=True,
-    title='Soil Moisture Forecaster',
+    title='Drought Warning System',
 )
 
 # Custom index for global typography
