@@ -390,6 +390,27 @@ def _comparison_card(label, value, value_sub, description, value_color):
     )
 
 
+def note_panel(title, body, tone='info'):
+    """Small explanatory callout used for assumptions and framing notes."""
+    color = {'info': T.SIGNAL, 'warn': T.WARN, 'alert': T.ALERT}.get(tone, T.SIGNAL)
+    bg = {'info': T.SIGNAL_SOFT, 'warn': T.WARN_SOFT, 'alert': T.ALERT_SOFT}.get(tone, T.SIGNAL_SOFT)
+    return html.Div(
+        [
+            html.Div(title, style={
+                'fontSize': '15px', 'fontWeight': 600, 'color': color,
+                'marginBottom': '8px',
+            }),
+            html.Div(body, style={
+                'fontSize': '14px', 'color': T.INK_SOFT, 'lineHeight': 1.55,
+            }),
+        ],
+        style={
+            'background': bg, 'borderLeft': f'3px solid {color}',
+            'padding': '20px 24px',
+        },
+    )
+
+
 def divider(margin='56px'):
     return html.Div(
         className='rule',
@@ -459,30 +480,30 @@ def station_map(selected=None, color_field='country'):
 def classify_recommendation(sm_now, sm_pred):
     if sm_pred < THRESHOLD and sm_now < THRESHOLD:
         return ('red',
-                'Drought stress now and in 3 days',
-                f'Soil moisture is {sm_now:.3f} now and predicted to remain at {sm_pred:.3f}. '
-                f'The threshold is {THRESHOLD}. Crops are already water-stressed — '
-                'irrigate immediately if water is available.')
+                'Supporting signal: soil is dry now and remains dry',
+                f'The 3-day regression forecast shows soil moisture at {sm_now:.3f} now and {sm_pred:.3f} in 3 days, '
+                f'both below the {THRESHOLD} drought threshold. The trend provides supporting evidence beside the '
+                '7-day onset warning layer.')
     if sm_pred < THRESHOLD and sm_now >= THRESHOLD:
         return ('red',
-                'Drought stress incoming within 3 days',
-                f'Soil is healthy now ({sm_now:.3f}) but forecast to drop to {sm_pred:.3f} — '
-                f'below the {THRESHOLD} threshold. Plan to irrigate in the next 24 to 48 hours. '
-                'This is the most valuable warning the model provides.')
+                'Supporting signal: moisture may cross the threshold',
+                f'Soil is currently above the drought threshold ({sm_now:.3f}) but the 3-day point forecast falls to '
+                f'{sm_pred:.3f}. This short-term trend provides context for the separate '
+                '7-day drought-onset classifier.')
     if sm_pred < THRESHOLD + 0.04 and sm_now >= THRESHOLD:
         return ('amber',
-                'Borderline — watch closely',
+                'Supporting signal: close to the threshold',
                 f'Soil moisture is {sm_now:.3f} now and predicted to fall to {sm_pred:.3f}. '
-                f'Close to the {THRESHOLD} threshold. Have irrigation ready.')
+                'The forecast is near the drought threshold, so it helps explain why a warning model may become sensitive.')
     if sm_pred < THRESHOLD + 0.04:
         return ('amber',
-                'Currently dry, holding steady',
+                'Supporting signal: already near drought conditions',
                 f'Soil moisture is {sm_now:.3f} now and predicted {sm_pred:.3f}. '
-                'Already near the threshold — irrigation likely needed this week.')
+                'The moisture trajectory is shown as supporting evidence rather than the final onset-warning decision.')
     return ('green',
-            'Soil moisture healthy',
+            'Supporting signal: moisture remains above threshold',
             f'Currently {sm_now:.3f}, predicted {sm_pred:.3f} in 3 days. '
-            f'Well above the {THRESHOLD} threshold. No irrigation needed.')
+            f'The point forecast stays above the {THRESHOLD} drought threshold.')
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -1781,6 +1802,14 @@ def page_results():
                            'marginTop': '20px', 'paddingLeft': '16px',
                            'borderLeft': f'2px solid {T.LINE}', 'fontStyle': 'italic'},
                 ),
+                html.Div(style={'height': '28px'}),
+                note_panel(
+                    'Important modelling assumption',
+                    'Some long-horizon experiments use observed future weather as if it were a perfect forecast. '
+                    'These results should be read as an optimistic upper bound; a deployed system would need real '
+                    'numerical-weather-prediction inputs, which carry their own errors.',
+                    tone='warn',
+                ),
             ],
             style={'marginTop': '80px'},
         )
@@ -1863,8 +1892,57 @@ def page_conclusions():
 
     journey_section = html.Div(
         [
-            section_title('Ten iterations', 'How XGBoost R² evolved across the experiment log. Hover any point for the change.'),
+            section_title('Regression experiment history',
+                          'How XGBoost R² evolved across the 72-hour moisture-forecasting experiments. '
+                          'Hover any point for the change introduced at that step.'),
             graph(fig_j, height=400),
+        ],
+        style={'marginTop': '80px'},
+    )
+
+    # Prototype limitations — be explicit about what separates this from a deployed tool.
+    limitations = [
+        ('Future weather realism',
+         'The long-horizon experiments partly use observed future weather as a perfect forecast. '
+         'Real deployment needs numerical-weather-prediction inputs, which carry their own errors.'),
+        ('Threshold tuning',
+         'The best-F1 threshold is useful for demonstration, but a final system should tune thresholds on a '
+         'separate validation split rather than the test set.'),
+        ('Duration integration',
+         'The drought-state scanner is the second prediction layer, but per-station duration outputs still '
+         'need to be connected to the interactive demonstration.'),
+        ('Short-term forecast asset',
+         'The available interactive asset is a 72-hour regression forecast, so it is used as supporting '
+         'evidence rather than the final alert.'),
+    ]
+
+    limitations_section = html.Div(
+        [
+            section_title('Prototype limitations',
+                          'These limitations separate the current proof-of-concept from a deployed irrigation-warning tool.'),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        html.Div(
+                            [
+                                html.H3(title, style={
+                                    'fontSize': '16px', 'fontWeight': 600, 'color': T.INK,
+                                    'marginBottom': '10px',
+                                }),
+                                html.P(body, style={
+                                    'fontSize': '14px', 'color': T.INK_SOFT,
+                                    'lineHeight': 1.55, 'marginBottom': 0,
+                                }),
+                            ],
+                            style={'padding': '24px', 'background': T.WARN_SOFT,
+                                   'border': f'1px solid {T.LINE}', 'height': '100%'},
+                        ),
+                        md=6,
+                    )
+                    for title, body in limitations
+                ],
+                className='gx-4 gy-4',
+            ),
         ],
         style={'marginTop': '80px'},
     )
@@ -1881,7 +1959,8 @@ def page_conclusions():
 
     future_section = html.Div(
         [
-            section_title('What we\'d do next'),
+            section_title('Next steps',
+                          'Concrete extensions that would move this prototype closer to a deployed warning tool.'),
             dbc.Row(
                 [
                     dbc.Col(
@@ -1912,7 +1991,8 @@ def page_conclusions():
     # Final station picker
     final_section = html.Div(
         [
-            section_title('One last look', 'Pick any station for a final summary of the model\'s performance there.'),
+            section_title('Station summary',
+                          'Select a station to view short-term forecast performance for that location.'),
             dbc.Row(
                 [
                     dbc.Col([
@@ -1990,6 +2070,7 @@ def page_conclusions():
         page_title('Conclusions', 'What we built, what we found, and what comes next.'),
         findings_section,
         journey_section,
+        limitations_section,
         future_section,
         final_section,
         team_section,
