@@ -327,6 +327,8 @@ def stat(label, value, sub=None, value_color=None):
 def verdict_panel(level, headline, body):
     color = {'green': T.OK, 'amber': T.WARN, 'red': T.ALERT}[level]
     bg = {'green': T.OK_SOFT, 'amber': T.WARN_SOFT, 'red': T.ALERT_SOFT}[level]
+    # `data-verdict` + a level-specific `key` make Dash re-mount the node
+    # each time `level` changes, replaying the slide/blur entry animation.
     return html.Div(
         [
             html.Div(
@@ -347,12 +349,13 @@ def verdict_panel(level, headline, body):
                 'fontSize': '15px', 'color': T.INK, 'lineHeight': 1.6,
             }),
         ],
+        key=f'verdict-{level}-{headline[:24]}',
+        **{'data-verdict': level},
         style={
             'background': bg,
             'borderLeft': f'3px solid {color}',
             'borderRadius': '6px',
             'padding': '24px 28px',
-            'animation': f'reveal 500ms {T.EASE_OUT} both',
         },
     )
 
@@ -559,8 +562,8 @@ def page_home():
                 dbc.Col(html.Div(stat('State windows', '24h',
                                       'scanned forward for duration', T.SIGNAL),
                                  className='reveal reveal-4'), md=3),
-                dbc.Col(html.Div(stat('Drought events caught', '99%',
-                                      'linear trend baseline catches 52%', T.ACCENT),
+                dbc.Col(html.Div(stat('Drought events caught', '98.7%',
+                                      '297/301 · linear baseline catches 51.5%', T.ACCENT),
                                  className='reveal reveal-5'), md=3),
             ],
             className='gx-4 gy-4',
@@ -573,25 +576,29 @@ def page_home():
                 'What the system predicts',
                 'The project is now centred on drought events, not just point soil-moisture accuracy.',
             ),
-            dbc.Row(
-                [
-                    dbc.Col(
-                        stat('1. Onset classifier', 'Will drought start?', 'XGBoost/RF classify drought entry 7 days ahead', T.ACCENT),
-                        md=4,
-                    ),
-                    dbc.Col(
-                        stat('2. State scanner', 'Will it persist?', 'RF/XGBoost check later 24h drought-state windows', T.SIGNAL),
-                        md=4,
-                    ),
-                    dbc.Col(
-                        stat('3. Moisture forecast', 'Supporting signal', 'Regression still explains the underlying soil-moisture path', T.INK_SOFT),
-                        md=4,
-                    ),
-                ],
-                className='gx-4 gy-4',
+            html.Div(
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            stat('1. Onset classifier', 'Will drought start?', 'XGBoost/RF classify drought entry 7 days ahead', T.ACCENT),
+                            md=4,
+                        ),
+                        dbc.Col(
+                            stat('2. State scanner', 'Will it persist?', 'RF/XGBoost check later 24h drought-state windows', T.SIGNAL),
+                            md=4,
+                        ),
+                        dbc.Col(
+                            stat('3. Moisture forecast', 'Supporting signal', 'Regression still explains the underlying soil-moisture path', T.INK_SOFT),
+                            md=4,
+                        ),
+                    ],
+                    className='gx-4 gy-4',
+                ),
+                className='reveal-on-scroll-stagger',
             ),
         ],
-        style={'marginTop': '64px'},
+        className='reveal-on-scroll',
+        style={'marginTop': '72px'},
     )
 
     # Example forecast chart
@@ -629,7 +636,8 @@ def page_home():
             ),
             graph(fig, height=340),
         ],
-        style={'marginTop': '64px'},
+        className='reveal-on-scroll',
+        style={'marginTop': '72px'},
     )
 
     # Why this matters columns — numbered, editorial
@@ -660,25 +668,407 @@ def page_home():
     why = html.Div(
         [
             section_title('Why this matters'),
-            dbc.Row(
-                [
-                    dbc.Col(why_col('01', 'The farmer\'s dilemma',
-                        'Most smallholders irrigate reactively. By the time leaves wilt, the yield '
-                        'damage is already done. A 7-day warning gives time to plan water before stress sets in.'), md=4),
-                    dbc.Col(why_col('02', 'The data we have',
-                        'ISMN soil sensors give hourly ground-truth moisture. NASA POWER satellites '
-                        'give daily weather everywhere. Combined, they cover places no weather station does.'), md=4),
-                    dbc.Col(why_col('03', 'What the model adds',
-                        'A linear drying-trend baseline catches only 52% of upcoming drought events. '
-                        'Our XGBoost classifier catches 99% at a 7-day horizon, using a 24-hour onset window.'), md=4),
-                ],
-                className='gx-4 gy-4',
+            html.Div(
+                dbc.Row(
+                    [
+                        dbc.Col(why_col('01', 'The farmer\'s dilemma',
+                            'Most smallholders irrigate reactively. By the time leaves wilt, the yield '
+                            'damage is already done. A 7-day warning gives time to plan water before stress sets in.'), md=4),
+                        dbc.Col(why_col('02', 'The data we have',
+                            'ISMN soil sensors give hourly ground-truth moisture. NASA POWER satellites '
+                            'give daily weather everywhere. Combined, they cover places no weather station does.'), md=4),
+                        dbc.Col(why_col('03', 'What the model adds',
+                            'A linear drying-trend baseline catches 51.5% of upcoming drought events while raising 483 false warnings. '
+                            'XGBoost at the best-F1 threshold catches 297 of 301 events — 98.7% — at a 7-day horizon with a 24-hour onset window.'), md=4),
+                    ],
+                    className='gx-4 gy-4',
+                ),
+                className='reveal-on-scroll-stagger',
             ),
         ],
-        style={'marginTop': '64px'},
+        className='reveal-on-scroll',
+        style={'marginTop': '72px'},
     )
 
-    return html.Div([hero, stats, system_section, why, chart_section])
+    # ── Model leaderboard — 5 models head-to-head from test 14 ─────────
+    leaderboard = _home_leaderboard()
+
+    # ── Top drivers — top 8 features from xgboost_feature_importance ───
+    drivers = _home_drivers()
+
+    # ── Horizon strip — degradation with lead time ─────────────────────
+    horizon_strip = _home_horizon()
+
+    # ── Station network preview ────────────────────────────────────────
+    network = _home_network()
+
+    # ── CTA strip ──────────────────────────────────────────────────────
+    cta = _home_cta()
+
+    return html.Div([
+        hero,
+        stats,
+        chart_section,
+        leaderboard,
+        system_section,
+        drivers,
+        horizon_strip,
+        network,
+        why,
+        cta,
+    ])
+
+
+def _home_leaderboard():
+    """Five models, one chart, the question answered. Pulled from test 14."""
+    if ONSET_EVENT_DF.empty:
+        return html.Div()
+
+    df = ONSET_EVENT_DF[ONSET_EVENT_DF['Threshold label'] == 'best_f1'].copy()
+    order = ['Persistence', 'Linear Trend', 'LSTM', 'TFT', 'Random Forest', 'XGBoost']
+    df = df[df['Model'].isin(order)].copy()
+    df['Model'] = pd.Categorical(df['Model'], categories=order, ordered=True)
+    df = df.sort_values('Model')
+
+    recalls = (df['Event recall'].astype(float) * 100).round(1).tolist()
+    precisions = (df['Event precision'].astype(float) * 100).round(1).tolist()
+    models = df['Model'].astype(str).tolist()
+
+    colors = {
+        'Persistence':   T.INK_FAINT,
+        'Linear Trend':  T.SIGNAL,
+        'LSTM':          T.WARN,
+        'TFT':           T.OK,
+        'Random Forest': T.ACCENT_DEEP,
+        'XGBoost':       T.ACCENT,
+    }
+    bar_colors = [colors[m] for m in models]
+
+    fig = make_subplots(rows=1, cols=2, horizontal_spacing=0.12,
+                        subplot_titles=('Event recall — % of 301 drought onsets caught',
+                                        'Event precision — % of warnings that were real'))
+    fig.add_trace(go.Bar(
+        x=models, y=recalls, marker_color=bar_colors,
+        text=[f'{v:.1f}%' for v in recalls], textposition='outside',
+        textfont=dict(family=T.FONT_MONO, size=11, color=T.INK),
+        cliponaxis=False, showlegend=False, hovertemplate='%{x}<br>recall %{y:.1f}%<extra></extra>',
+    ), row=1, col=1)
+    fig.add_trace(go.Bar(
+        x=models, y=precisions, marker_color=bar_colors,
+        text=[f'{v:.1f}%' for v in precisions], textposition='outside',
+        textfont=dict(family=T.FONT_MONO, size=11, color=T.INK),
+        cliponaxis=False, showlegend=False, hovertemplate='%{x}<br>precision %{y:.1f}%<extra></extra>',
+    ), row=1, col=2)
+    fig.update_yaxes(range=[0, 109], showticklabels=False, showgrid=False)
+    fig.update_xaxes(tickfont=dict(size=11, family=T.FONT, color=T.INK_SOFT))
+    fig.update_layout(
+        bargap=0.45,
+        margin=dict(l=10, r=10, t=44, b=20),
+        annotations=[
+            dict(text=t['text'], x=t['x'], y=1.10, xref='paper', yref='paper',
+                 showarrow=False, font=dict(size=12, color=T.INK_FAINT, family=T.FONT))
+            for t in fig.layout.annotations
+        ],
+    )
+
+    return html.Div(
+        [
+            section_title(
+                'How five models stack up',
+                'At a 7-day horizon with a 24-hour onset window. Best-F1 thresholds. '
+                'Persistence assumes nothing changes; the linear baseline is a smart heuristic; the rest are trained models.',
+            ),
+            graph(fig, height=320),
+            html.Div(
+                [
+                    html.Span('SOURCE  ', className='eyebrow'),
+                    html.Span('test 14 · drought onset 168h 24h tolerance · 42,948 test samples · 301 onset events',
+                              style={'fontFamily': T.FONT_MONO, 'fontSize': '11px',
+                                     'color': T.INK_FAINT, 'letterSpacing': '0.04em'}),
+                ],
+                style={'marginTop': '12px', 'textAlign': 'right'},
+            ),
+        ],
+        className='reveal-on-scroll',
+        style={'marginTop': '88px'},
+    )
+
+
+def _home_drivers():
+    """Top features the XGBoost classifier actually uses."""
+    if FI.empty and len(FI) == 0:
+        return html.Div()
+
+    # Prefer the onset model FI from test 14 if available; else fall back to FI parquet
+    fi_csv = IMAGES_DIR / 'test 14 - drought onset 168h 24h tolerance' / 'xgboost_feature_importance.csv'
+    if fi_csv.exists():
+        fi = pd.read_csv(fi_csv).head(8)
+    else:
+        fi = FI.head(8).copy()
+        if 'group' not in fi.columns:
+            fi['group'] = 'feature'
+
+    label_map = {
+        'sm_value':              ('Current soil moisture',        'soil'),
+        'sm_rolling_mean_72h':   ('3-day rolling mean',           'soil'),
+        'sm_rolling_mean_168h':  ('7-day rolling mean',           'soil'),
+        'sm_rolling_std_168h':   ('7-day rolling volatility',     'soil'),
+        'sm_rolling_std_72h':    ('3-day rolling volatility',     'soil'),
+        'sm_lag_24h':            ('Soil moisture 24h ago',        'soil'),
+        'PRECTOTCORR_t+48h':     ('Rainfall forecast · +48h',     'weather'),
+        'PRECTOTCORR_t+72h':     ('Rainfall forecast · +72h',     'weather'),
+        'PRECTOTCORR_t+96h':     ('Rainfall forecast · +96h',     'weather'),
+        'PRECTOTCORR_t+120h':    ('Rainfall forecast · +120h',    'weather'),
+        'PRECTOTCORR_t+144h':    ('Rainfall forecast · +144h',    'weather'),
+        'ET0_t+48h':             ('Evapotranspiration · +48h',    'weather'),
+        'ET0_t+96h':             ('Evapotranspiration · +96h',    'weather'),
+        'ALLSKY_SFC_SW_DWN_t+144h': ('Solar radiation · +144h',   'weather'),
+    }
+
+    rows = []
+    max_imp = float(fi['importance'].max())
+    for _, r in fi.iterrows():
+        feat = r['feature']
+        label, group = label_map.get(feat, (feat, r.get('group', 'feature')))
+        pct = (float(r['importance']) / max_imp) * 100
+        color = T.ACCENT if group == 'soil' else T.SIGNAL
+        rows.append(html.Div(
+            [
+                html.Div(label, style={
+                    'flex': '0 0 240px', 'fontSize': '14px',
+                    'color': T.INK, 'fontWeight': 500,
+                }),
+                html.Div(
+                    html.Div(style={
+                        'width': f'{pct:.1f}%', 'height': '100%',
+                        'background': color, 'borderRadius': '2px',
+                        'transition': f'width 900ms {T.EASE_OUT}',
+                    }),
+                    style={
+                        'flex': '1 1 auto', 'height': '8px',
+                        'background': T.LINE_SOFT, 'borderRadius': '2px',
+                        'overflow': 'hidden', 'margin': '0 18px',
+                    },
+                ),
+                html.Div(f'{float(r["importance"])*100:.1f}', style={
+                    'flex': '0 0 56px', 'textAlign': 'right',
+                    'fontFamily': T.FONT_MONO, 'fontSize': '12px',
+                    'color': T.INK_FAINT, 'letterSpacing': '0.04em',
+                }),
+            ],
+            style={'display': 'flex', 'alignItems': 'center', 'padding': '12px 0',
+                   'borderBottom': f'1px solid {T.LINE_SOFT}'},
+        ))
+
+    legend = html.Div(
+        [
+            html.Span([
+                html.Span(style={'display': 'inline-block', 'width': '10px', 'height': '10px',
+                                 'background': T.ACCENT, 'borderRadius': '2px',
+                                 'marginRight': '8px', 'verticalAlign': 'middle'}),
+                'Soil moisture history',
+            ], style={'marginRight': '28px', 'fontSize': '12px', 'color': T.INK_SOFT,
+                      'fontFamily': T.FONT_MONO, 'letterSpacing': '0.04em'}),
+            html.Span([
+                html.Span(style={'display': 'inline-block', 'width': '10px', 'height': '10px',
+                                 'background': T.SIGNAL, 'borderRadius': '2px',
+                                 'marginRight': '8px', 'verticalAlign': 'middle'}),
+                'Weather forecast',
+            ], style={'fontSize': '12px', 'color': T.INK_SOFT,
+                      'fontFamily': T.FONT_MONO, 'letterSpacing': '0.04em'}),
+        ],
+        style={'marginTop': '16px'},
+    )
+
+    return html.Div(
+        [
+            section_title(
+                'What the model actually looks at',
+                'The top eight features by XGBoost importance gain. The model leans on recent soil-moisture '
+                'history first, then peers ahead at upcoming rainfall and evapotranspiration to anticipate the dry-down.',
+            ),
+            html.Div(rows, style={'borderTop': f'1px solid {T.LINE_SOFT}'}),
+            legend,
+        ],
+        className='reveal-on-scroll',
+        style={'marginTop': '88px'},
+    )
+
+
+def _home_horizon():
+    """How the model degrades as we forecast farther ahead."""
+    if HORIZON_DF.empty:
+        return html.Div()
+
+    # Find an R²/recall column we can chart
+    df = HORIZON_DF.copy()
+    if 'XGBoost_R2' in df.columns:
+        ycol, label = 'XGBoost_R2', 'XGBoost R²'
+    elif 'XGBoost (with wx)' in df.columns:
+        ycol, label = 'XGBoost (with wx)', 'XGBoost R²'
+    else:
+        # try any numeric column other than horizon
+        cands = [c for c in df.columns if c.lower() not in ('horizon', 'horizon_hours', 'hours')]
+        ycol = next((c for c in cands if df[c].dtype.kind in 'fi'), None)
+        if ycol is None:
+            return html.Div()
+        label = ycol
+
+    xcol = next((c for c in df.columns if c.lower() in ('horizon', 'horizon_hours', 'hours')), df.columns[0])
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df[xcol], y=df[ycol],
+        mode='lines+markers',
+        line=dict(color=T.ACCENT, width=2.5, shape='spline'),
+        marker=dict(size=8, color=T.ACCENT, line=dict(color=T.PANEL_RAISED, width=2)),
+        hovertemplate='+%{x}h<br>' + label + ' %{y:.3f}<extra></extra>',
+    ))
+    fig.update_layout(
+        xaxis_title='Lead time (hours)',
+        yaxis_title=label,
+        margin=dict(l=64, r=28, t=20, b=56),
+    )
+
+    return html.Div(
+        [
+            section_title(
+                'Sharper close-in, softer far-out',
+                'Forecast quality decays with lead time — accuracy is best at 24h and bottoms out near a week. '
+                'The drought-onset classifier sits on top of this, converting the regression signal into a binary warning.',
+            ),
+            graph(fig, height=300),
+        ],
+        className='reveal-on-scroll',
+        style={'marginTop': '88px'},
+    )
+
+
+def _home_network():
+    """A compact preview of the 48-station network."""
+    if META.empty:
+        return html.Div()
+
+    fig = px.scatter_map(
+        META, lat='latitude', lon='longitude',
+        color='country',
+        color_discrete_map={'Kenya': T.ACCENT, 'Uganda': T.SIGNAL,
+                            'Rwanda': T.OK, 'Other': T.INK_FAINT},
+        hover_name='short_name',
+        hover_data={'country': True, 'network': True, 'elevation_m': ':.0f',
+                    'latitude': False, 'longitude': False},
+        zoom=4.2, opacity=0.85,
+    )
+    fig.update_traces(marker=dict(size=10))
+    fig.update_layout(
+        map_style='carto-positron',
+        map_center=dict(lat=0.5, lon=36),
+        margin=dict(l=0, r=0, t=0, b=0),
+        legend=dict(orientation='h', yanchor='bottom', y=0.02, xanchor='left', x=0.02,
+                    bgcolor='rgba(255,255,255,0.92)', font=dict(size=11, color=T.INK_SOFT),
+                    itemsizing='constant'),
+        legend_title_text='',
+    )
+
+    # Country breakdown
+    counts = META['country'].value_counts()
+    breakdown = []
+    for country in ['Kenya', 'Uganda', 'Rwanda']:
+        n = int(counts.get(country, 0))
+        if not n:
+            continue
+        col = {'Kenya': T.ACCENT, 'Uganda': T.SIGNAL, 'Rwanda': T.OK}[country]
+        breakdown.append(html.Div(
+            [
+                html.Div(country.upper(), className='eyebrow', style={'marginBottom': '8px'}),
+                html.Div(str(n), className='stat-value', style={
+                    'fontSize': '36px', 'fontFamily': T.FONT_DISPLAY,
+                    'color': col, 'lineHeight': 1, 'marginBottom': '4px',
+                }),
+                html.Div('stations', style={'fontSize': '12px', 'color': T.INK_SOFT}),
+            ],
+            style={'padding': '20px 24px', 'borderLeft': f'2px solid {col}',
+                   'marginBottom': '16px'},
+        ))
+
+    return html.Div(
+        [
+            section_title(
+                'Forty-eight stations across East Africa',
+                'ISMN soil-moisture sensors from the TAHMO and COSMOS networks, '
+                'paired with NASA POWER satellite weather. Each dot is a real, calibrated sensor.',
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(graph(fig, height=380), md=8),
+                    dbc.Col(html.Div(breakdown), md=4),
+                ],
+                className='gx-4',
+            ),
+        ],
+        className='reveal-on-scroll',
+        style={'marginTop': '88px'},
+    )
+
+
+def _home_cta():
+    """End-of-page nudge toward the live demo."""
+    return html.Div(
+        html.Div(
+            [
+                html.Div('TRY IT YOURSELF', className='eyebrow eyebrow-accent',
+                         style={'marginBottom': '18px'}),
+                html.H2([
+                    'Pick a station. ',
+                    html.Em('See the warning.'),
+                ], className='display', style={
+                    'fontSize': 'clamp(32px, 4vw, 48px)', 'color': T.INK,
+                    'margin': '0 0 16px 0', 'maxWidth': '720px',
+                }),
+                html.P(
+                    'The live demo runs the trained XGBoost classifier against held-out data for any '
+                    'of the 48 stations, and surfaces the same recommendation a farmer would receive.',
+                    style={
+                        'fontSize': '17px', 'color': T.INK_SOFT, 'lineHeight': 1.6,
+                        'maxWidth': '640px', 'margin': '0 0 32px 0',
+                    },
+                ),
+                html.Div(
+                    [
+                        html.Span('Open the live demo', style={'verticalAlign': 'middle'}),
+                        html.Span('  ↗', style={
+                            'fontFamily': T.FONT_MONO, 'marginLeft': '6px',
+                            'verticalAlign': 'middle',
+                        }),
+                    ],
+                    id={'type': 'nav-link', 'page': 'demo'},
+                    n_clicks=0,
+                    className='press',
+                    style={
+                        'display': 'inline-block',
+                        'padding': '14px 28px',
+                        'background': T.INK,
+                        'color': T.PANEL_RAISED,
+                        'fontSize': '14px',
+                        'fontWeight': 500,
+                        'letterSpacing': '0.02em',
+                        'cursor': 'pointer',
+                        'borderRadius': '6px',
+                        'boxShadow': T.SHADOW_MD,
+                    },
+                ),
+            ],
+            style={'padding': '64px 56px', 'maxWidth': '900px'},
+        ),
+        className='reveal-on-scroll',
+        style={
+            'marginTop': '120px',
+            'background': T.PANEL_RAISED,
+            'border': f'1px solid {T.LINE}',
+            'borderRadius': '8px',
+            'boxShadow': T.SHADOW_SM,
+        },
+    )
 
 
 # ── THE DATA ─────────────────────────────────────────────────────────
@@ -1261,20 +1651,22 @@ def page_results():
                 [
                     dbc.Col(_comparison_card(
                         'Persistence', '0%',
-                        'catch rate on true onset events',
+                        'catch rate · 301 onset events',
                         'Assumes nothing changes. Blind to any transition by construction.',
                         T.INK_FAINT,
                     ), md=4),
                     dbc.Col(_comparison_card(
-                        'Linear trend baseline', '50%',
-                        'catch rate on true onset events',
-                        'Flags when soil has been falling steadily for several days. A reasonable human heuristic.',
+                        'Linear trend baseline', '51.5%',
+                        'catch rate · 301 onset events',
+                        'Flags when soil has been falling steadily for several days. A reasonable human heuristic — '
+                        'but it also raises 483 false warnings to get there.',
                         T.SIGNAL,
                     ), md=4),
                     dbc.Col(_comparison_card(
-                        'Our model', '97%',
-                        'catch rate on true onset events',
-                        'Trained on soil history, weather, station context. Nearly doubles the smart baseline.',
+                        'XGBoost (best-F1)', '98.7%',
+                        'catch rate · 301 onset events',
+                        'Trained on soil history, weather, station context. Catches 297 of 301 events at the best-F1 '
+                        'threshold (PR-AUC 0.82, ROC-AUC 0.95) — nearly doubles the smart baseline.',
                         T.ACCENT,
                     ), md=4),
                 ],
@@ -1767,9 +2159,10 @@ app.index_string = '''
                 font-feature-settings: "cv11", "ss01", "ss03";
             }
 
-            /* The whole content surface fades up on first mount */
+            /* The whole content surface fades up on first mount.
+               `forwards` keeps the final state even if the animation never completes. */
             #page-content {
-                animation: pageEnter 520ms var(--ease-out) both;
+                animation: pageEnter 520ms var(--ease-out) forwards;
             }
             @keyframes pageEnter {
                 0%   { opacity: 0; transform: translateY(8px); filter: blur(2px); }
@@ -1970,6 +2363,72 @@ app.index_string = '''
 
             /* Plotly graph chrome — drop the modebar shadow on hover */
             .js-plotly-plot .plotly { transition: opacity var(--dur-base) var(--ease-out); }
+
+            /* Scroll-triggered reveal — content is ALWAYS fully visible.
+               JS only triggers a subtle translate when it enters view. No opacity dimming. */
+            .reveal-on-scroll {
+                transform: translateY(0);
+                transition: transform 700ms var(--ease-out);
+            }
+            html.js-ready .reveal-on-scroll:not(.revealed) {
+                transform: translateY(12px);
+            }
+            .reveal-on-scroll-stagger > * {
+                transform: translateY(0);
+                transition: transform 600ms var(--ease-out);
+            }
+            html.js-ready .reveal-on-scroll-stagger:not(.revealed) > * {
+                transform: translateY(10px);
+            }
+            .reveal-on-scroll-stagger.revealed > *:nth-child(1) { transition-delay: 0ms; }
+            .reveal-on-scroll-stagger.revealed > *:nth-child(2) { transition-delay: 70ms; }
+            .reveal-on-scroll-stagger.revealed > *:nth-child(3) { transition-delay: 140ms; }
+            .reveal-on-scroll-stagger.revealed > *:nth-child(4) { transition-delay: 210ms; }
+            .reveal-on-scroll-stagger.revealed > *:nth-child(5) { transition-delay: 280ms; }
+            .reveal-on-scroll-stagger.revealed > *:nth-child(6) { transition-delay: 350ms; }
+
+            /* Cursor spotlight — radial highlight that tracks the mouse over .lift cards */
+            .lift {
+                position: relative;
+                isolation: isolate;
+            }
+            .lift::after {
+                content: "";
+                position: absolute;
+                inset: 0;
+                border-radius: inherit;
+                pointer-events: none;
+                opacity: 0;
+                background: radial-gradient(
+                    260px circle at var(--spot-x, 50%) var(--spot-y, 50%),
+                    rgba(184, 82, 31, 0.10),
+                    transparent 60%
+                );
+                transition: opacity var(--dur-base) var(--ease-out);
+                z-index: 0;
+            }
+            @media (hover: hover) and (pointer: fine) {
+                .lift:hover::after { opacity: 1; }
+            }
+            .lift > * { position: relative; z-index: 1; }
+
+            /* Nav links get a faster transform transition so the magnetic pull feels snappy */
+            .nav-link-item { transition-property: color, background, padding-left, transform; }
+
+            /* Verdict panels — slide + blur lift on appear */
+            [data-verdict] {
+                animation: verdictIn 540ms var(--ease-drawer) both;
+            }
+            @keyframes verdictIn {
+                0%   { opacity: 0; transform: translateY(10px) scale(0.985); filter: blur(3px); }
+                60%  { filter: blur(0); }
+                100% { opacity: 1; transform: translateY(0)    scale(1); filter: blur(0); }
+            }
+
+            /* Plotly path draw-on — gives line charts a 'being plotted' feel */
+            .js-plotly-plot .scatterlayer .trace .js-line {
+                stroke-linecap: round;
+            }
 
             /* Scrollbar — subtle, on-brand */
             ::-webkit-scrollbar { width: 10px; height: 10px; }
