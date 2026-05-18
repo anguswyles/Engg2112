@@ -1,0 +1,56 @@
+.team-zone {
+    position: absolute;
+    top: 0;
+    cursor: pointer;
+}
+
+.team-zone .member-card {
+    visibility: hidden;
+    opacity: 0;
+    position: absolute;
+    bottom: calc(100% + 12px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #181613;
+    color: #FBF9F5;
+    padding: 10px 16px;
+    border-radius: 8px;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 1000;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    transition: opacity 0.12s ease, visibility 0.12s ease;
+    text-align: center;
+}
+
+.team-zone:hover .member-card {
+    visibility: visible;
+    opacity: 1;
+}
+
+.member-card .member-name {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin-bottom: 3px;
+}
+
+.member-card .member-role {
+    display: block;
+    font-size: 12px;
+    font-weight: 400;
+    opacity: 0.7;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.member-card::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 7px solid transparent;
+    border-top-color: #181613;
+}

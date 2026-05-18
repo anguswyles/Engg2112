@@ -1946,13 +1946,38 @@ def page_conclusions():
             ),
             html.H3('The ENGG2112 Data Farmers', style={
                 'fontSize': '22px', 'fontWeight': 600, 'color': T.INK,
-                'letterSpacing': '-0.01em', 'textAlign': 'center', 'marginBottom': '20px',
+                'letterSpacing': '-0.01em', 'textAlign': 'center', 'marginBottom': '24px',
             }),
-            html.P(
-                'Angus  ·  Domain Researcher    James  ·  Project Lead    '
-                'Oscar  ·  ML Engineer    Byron  ·  Data Engineer',
-                style={'fontSize': '14px', 'color': T.INK_SOFT,
-                       'textAlign': 'center', 'letterSpacing': '0.02em', 'marginBottom': 0},
+            html.Div(
+                [
+                    html.Img(
+                        src='/assets/datafarmers.png',
+                        alt='The ENGG2112 Data Farmers',
+                        style={'width': '100%', 'display': 'block', 'borderRadius': '4px'},
+                    ),
+                    # Zones sized to each person's actual position; height covers upper bodies only
+                    html.Div([html.Div([
+                        html.Span('James Robison', className='member-name'),
+                        html.Span('Project Lead', className='member-role'),
+                    ], className='member-card')], className='team-zone',
+                        style={'left': '9%', 'width': '22%', 'height': '60%'}),
+                    html.Div([html.Div([
+                        html.Span('Oscar Everett', className='member-name'),
+                        html.Span('ML Engineer', className='member-role'),
+                    ], className='member-card')], className='team-zone',
+                        style={'left': '30%', 'width': '21%', 'height': '60%'}),
+                    html.Div([html.Div([
+                        html.Span('Angus Wyles', className='member-name'),
+                        html.Span('Domain Researcher', className='member-role'),
+                    ], className='member-card')], className='team-zone',
+                        style={'left': '46%', 'width': '25%', 'height': '60%'}),
+                    html.Div([html.Div([
+                        html.Span('Byron Evans', className='member-name'),
+                        html.Span('Data Engineer', className='member-role'),
+                    ], className='member-card')], className='team-zone',
+                        style={'left': '63%', 'width': '32%', 'height': '60%'}),
+                ],
+                style={'position': 'relative', 'maxWidth': '700px', 'margin': '0 auto'},
             ),
         ],
         style={
