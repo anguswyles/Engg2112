@@ -46,10 +46,72 @@ from prepare import (
 from config import THRESHOLD, XGB_PARAMS
 from xgboost import XGBRegressor
 
-# Reuse the exact network definitions from the main experiment so the
-# architectures are identical and only the split differs.
-sys.path.insert(0, os.path.dirname(__file__))
-from run_experiment import _build_tft, _build_lstm_dual
+# Both model builders are inlined here. Importing from run_experiment.py would
+# trigger that script's module-level argparse and break our CLI.
+
+
+def _build_lstm_dual(seq_len, n_features, future_steps, n_future_wx):
+    """LSTM with past sequence + oracle future weather (matches run_experiment.py)."""
+    from tensorflow.keras import layers
+    seq_in = keras.Input(shape=(seq_len, n_features), name='sequence')
+    fut_in = keras.Input(shape=(future_steps, n_future_wx), name='future_weather')
+    x = layers.LSTM(64, return_sequences=True)(seq_in)
+    x = layers.Dropout(0.2)(x)
+    x = layers.LSTM(32)(x)
+    x = layers.Dropout(0.2)(x)
+    fw = layers.Flatten()(fut_in)
+    fw = layers.Dense(32, activation='relu')(fw)
+    x = layers.Concatenate()([x, fw])
+    x = layers.Dense(16, activation='relu')(x)
+    out = layers.Dense(1)(x)
+    return keras.Model([seq_in, fut_in], out)
+
+
+def _build_tft(seq_len, n_features, n_static, future_steps=None, n_future_wx=None):
+    """TFT v3 — minimal targeted regularisation.
+
+    v2 over-dropped (6 layers); the model couldn't learn. v3 keeps only two
+    dropouts, placed where station-overfit actually happens:
+      • Dropout(0.2) inside the static encoder — the dominant failure mode
+        for cross-station generalisation (static feats act as station IDs).
+      • Dropout(0.2) after the LSTM — regularises the temporal representation
+        before it reaches attention.
+    Everything else matches the original _build_tft from run_experiment.py.
+    """
+    from tensorflow.keras import layers
+    seq_in = keras.Input(shape=(seq_len, n_features), name='sequence')
+    sta_in = keras.Input(shape=(n_static,), name='static')
+    fut_in = None
+    if future_steps is not None and n_future_wx:
+        fut_in = keras.Input(shape=(future_steps, n_future_wx), name='future_weather')
+
+    s = layers.Dense(16, activation='elu')(sta_in)
+    s = layers.Dropout(0.2)(s)
+    s = layers.Dense(16)(s)
+    s_exp = layers.RepeatVector(seq_len)(s)
+    x = layers.Concatenate(axis=-1)([seq_in, s_exp])
+
+    x = layers.LSTM(64, return_sequences=True)(x)
+    x = layers.Dropout(0.2)(x)
+
+    a = layers.MultiHeadAttention(num_heads=4, key_dim=16)(x, x)
+    g = layers.Dense(64, activation='sigmoid')(a)
+    x = layers.Add()([layers.Multiply()([g, a]), x])
+    x = layers.LayerNormalization()(x)
+
+    x = layers.Lambda(lambda t: t[:, -1, :])(x)
+
+    if fut_in is not None:
+        fw = layers.Flatten()(fut_in)
+        fw = layers.Dense(16, activation='elu')(fw)
+        fw = layers.LayerNormalization()(fw)
+        x = layers.Concatenate()([x, fw])
+
+    x = layers.Dense(16, activation='relu')(x)
+    out = layers.Dense(1)(x)
+
+    inputs = [seq_in, sta_in] if fut_in is None else [seq_in, fut_in, sta_in]
+    return keras.Model(inputs=inputs, outputs=out)
 
 HORIZON = 72
 N_HOLDOUT = 8
@@ -315,7 +377,7 @@ def run_tft(stations, holdout, with_weather):
                 keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5,
                                                   patience=2, min_lr=1e-6, verbose=0),
             ],
-            verbose=0,
+            verbose=1,
         )
         pred = model.predict([X_te_n, fut_te_n, stat_te_n], verbose=0).flatten()
     else:
@@ -331,7 +393,7 @@ def run_tft(stations, holdout, with_weather):
                 keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5,
                                                   patience=2, min_lr=1e-6, verbose=0),
             ],
-            verbose=0,
+            verbose=1,
         )
         pred = model.predict([X_te_n, stat_te_n], verbose=0).flatten()
 
@@ -355,12 +417,26 @@ def _next_test_name():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('name', nargs='?', default=None)
+    ap.add_argument('--models', default='all',
+                    help='Comma-separated subset: rf,xgb,lstm,tft. Default: all.')
+    ap.add_argument('--into', default=None,
+                    help='Existing test folder to merge rerun results into '
+                         '(e.g. "test 17 - station holdout"). Required if --models is a subset.')
     args = ap.parse_args()
 
-    run_name = args.name or _next_test_name()
+    requested = {m.strip().lower() for m in args.models.split(',')} if args.models != 'all' \
+        else {'rf', 'xgb', 'lstm', 'tft'}
+    subset_run = requested != {'rf', 'xgb', 'lstm', 'tft'}
+
+    if subset_run and not args.into:
+        raise SystemExit('--into is required when running a subset of models')
+
+    run_name = args.into if subset_run else (args.name or _next_test_name())
     out_dir = os.path.join(IMAGES_ROOT, run_name)
     os.makedirs(out_dir, exist_ok=True)
-    print(f'\n{"="*60}\nRun: {run_name}\nOutput: images/{run_name}/\n{"="*60}\n')
+    print(f'\n{"="*60}\nRun: {run_name}'
+          f'{"  (subset rerun: " + ",".join(sorted(requested)) + ")" if subset_run else ""}'
+          f'\nOutput: images/{run_name}/\n{"="*60}\n')
 
     print('Loading stations (with weather, used for both configs)...')
     stations = load_all_stations(with_weather=True)
@@ -385,27 +461,35 @@ def main():
     all_metrics = []
     all_per_station = []
 
+    run_tabular_flag = any(m in requested for m in ('rf', 'xgb'))
+    rf_xgb_filter = {m for m in ('rf', 'xgb') if m in requested}
+
     for with_weather in (False, True):
         tag = 'with weather' if with_weather else 'no weather'
         print(f'\n{"="*60}\nCONFIG: {tag}\n{"="*60}')
 
-        print(f'\n  Tabular models...')
-        tabular = run_tabular(stations, holdout, with_weather)
-        gc.collect()
+        results = {}
 
-        print(f'\n  LSTM...')
-        y_l, p_l, k_l = run_lstm(stations, holdout, with_weather)
-        gc.collect()
+        if run_tabular_flag:
+            print(f'\n  Tabular models...')
+            tabular = run_tabular(stations, holdout, with_weather)
+            gc.collect()
+            if 'rf' in rf_xgb_filter:
+                results['Random Forest'] = tabular['Random Forest']
+            if 'xgb' in rf_xgb_filter:
+                results['XGBoost'] = tabular['XGBoost']
 
-        print(f'\n  TFT...')
-        y_t, p_t, k_t = run_tft(stations, holdout, with_weather)
-        gc.collect()
+        if 'lstm' in requested:
+            print(f'\n  LSTM...')
+            y_l, p_l, k_l = run_lstm(stations, holdout, with_weather)
+            gc.collect()
+            results['LSTM'] = (y_l, p_l, k_l)
 
-        results = {
-            **tabular,
-            'LSTM': (y_l, p_l, k_l),
-            'TFT':  (y_t, p_t, k_t),
-        }
+        if 'tft' in requested:
+            print(f'\n  TFT...')
+            y_t, p_t, k_t = run_tft(stations, holdout, with_weather)
+            gc.collect()
+            results['TFT'] = (y_t, p_t, k_t)
 
         for name, (yt, yp, kk) in results.items():
             m = _regression_metrics(yt, yp)
@@ -423,10 +507,26 @@ def main():
             all_per_station.append(ps)
 
     metrics_df = pd.DataFrame(all_metrics)
-    metrics_df.to_csv(os.path.join(out_dir, 'metrics.csv'), index=False)
-
     per_station_df = pd.concat(all_per_station, ignore_index=True)
-    per_station_df.to_csv(os.path.join(out_dir, 'per_station_metrics.csv'), index=False)
+
+    metrics_path = os.path.join(out_dir, 'metrics.csv')
+    per_station_path = os.path.join(out_dir, 'per_station_metrics.csv')
+
+    if subset_run and os.path.exists(metrics_path):
+        # Merge: drop existing rows for the (Model × Weather) pairs we just ran,
+        # then append the new ones. Keeps numbers from models we didn't rerun.
+        existing = pd.read_csv(metrics_path)
+        ran_pairs = metrics_df[['Model', 'Weather']].apply(tuple, axis=1).tolist()
+        keep = ~existing[['Model', 'Weather']].apply(tuple, axis=1).isin(ran_pairs)
+        metrics_df = pd.concat([existing[keep], metrics_df], ignore_index=True)
+
+        if os.path.exists(per_station_path):
+            existing_ps = pd.read_csv(per_station_path)
+            keep_ps = ~existing_ps[['Model', 'Weather']].apply(tuple, axis=1).isin(ran_pairs)
+            per_station_df = pd.concat([existing_ps[keep_ps], per_station_df], ignore_index=True)
+
+    metrics_df.to_csv(metrics_path, index=False)
+    per_station_df.to_csv(per_station_path, index=False)
 
     # Summary plot: MAE per model, with vs without weather.
     fig, ax = plt.subplots(figsize=(10, 5))
