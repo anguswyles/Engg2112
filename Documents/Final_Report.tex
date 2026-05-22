@@ -1,0 +1,961 @@
+\documentclass[12pt, a4paper]{article}
+
+% ── Packages ──────────────────────────────────────────────────────────────────
+\usepackage[a4paper, margin=2.5cm]{geometry}
+\usepackage{fontenc}
+\usepackage{inputenc}
+\setlength{\headheight}{15pt}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{parskip}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{setspace}
+\usepackage[numbers, compress]{natbib}
+\usepackage{url}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{tcolorbox}
+
+% ── Colours ───────────────────────────────────────────────────────────────────
+\definecolor{usydnavy}{RGB}{0, 36, 77}
+\definecolor{usydgold}{RGB}{228, 172, 43}
+\definecolor{midgray}{RGB}{180, 180, 180}
+\definecolor{placeholderbg}{RGB}{240, 244, 250}
+\definecolor{placeholderborder}{RGB}{0, 36, 77}
+
+% ── Figure path setup ─────────────────────────────────────────────────────────
+% Image files live under ../images/test N - <description>/, so we add each test
+% folder we draw figures from as a graphicspath entry. \includegraphics calls
+% then refer to images by basename.
+\graphicspath{%
+  {../images/test 10 - current models rerun/}%
+  {../images/test 11 - weather vs no wx t+120h/}%
+  {../images/test 14 - drought onset 168h 24h tolerance/}%
+  {../images/test 17 - station holdout/}%
+  {../images/}%
+}
+
+% Figure helper. Usage: \realfig{filename.png}{label}{caption}
+\newcommand{\realfig}[3]{%
+  \begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\linewidth]{#1}
+    \caption{#3}
+    \label{fig:#2}
+  \end{figure}%
+}
+
+% Retained for fallback if any image is missing during a build.
+\newcommand{\figplaceholder}[3]{%
+  \begin{figure}[H]
+    \centering
+    \begin{tcolorbox}[
+      colback=placeholderbg,
+      colframe=placeholderborder,
+      boxrule=0.8pt,
+      arc=3pt,
+      left=6pt, right=6pt, top=6pt, bottom=6pt,
+      width=\linewidth
+    ]
+      \centering
+      \texttt{\textcolor{usydnavy}{[Figure placeholder: \textbf{#1}]}}\\[0.3em]
+      \textcolor{midgray}{\small Replace with the rendered version of #1}
+    \end{tcolorbox}
+    \caption{#3}
+    \label{fig:#2}
+  \end{figure}%
+}
+
+% ── Hyperref setup ────────────────────────────────────────────────────────────
+\hypersetup{
+    colorlinks=true,
+    linkcolor=usydnavy,
+    urlcolor=usydnavy,
+    citecolor=usydnavy,
+    pdfauthor={Oscar Everett, James Robison, Angus Wyles, Byron Evans},
+    pdftitle={ENGG2112 Final Report},
+}
+
+% ── Section formatting ────────────────────────────────────────────────────────
+\titleformat{\section}
+  {\large\bfseries\color{usydnavy}}
+  {\thesection.}{0.6em}{}[\vspace{-0.3em}\textcolor{usydgold}{\rule{\linewidth}{1.5pt}}]
+
+\titleformat{\subsection}
+  {\normalsize\bfseries\color{usydnavy}}
+  {\thesubsection.}{0.5em}{}
+
+\titlespacing{\section}{0pt}{1.4em}{0.6em}
+\titlespacing{\subsection}{0pt}{1em}{0.4em}
+
+% ── Header / footer ───────────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{usydnavy}{ENGG2112: Final Report}}
+\fancyhead[R]{\small\textcolor{usydnavy}{Semester 1, 2026}}
+\fancyfoot[C]{\small\textcolor{midgray}{\thepage}}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{usydgold}%
+  \leaders\hrule height \headrulewidth\hfill}}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{document}
+
+% ══════════════════════════════════════════════════════════════════════════════
+%  COVER PAGE
+% ══════════════════════════════════════════════════════════════════════════════
+\begin{titlepage}
+\begin{center}
+
+  {\color{usydgold}\rule{\linewidth}{3pt}}
+  \vspace{0.4cm}
+  {\color{usydnavy}\rule{\linewidth}{1pt}}
+  \vspace{1cm}
+
+  \IfFileExists{USYD logo.png}{\includegraphics[height=2.8cm]{{USYD logo}.png}}{}
+
+  {\Large\bfseries\color{usydnavy} The University of Sydney}\\[0.2em]
+  {\normalsize\color{usydnavy} Faculty of Engineering}\\[0.1em]
+  {\normalsize\color{midgray} ENGG2112: Multi-Disciplinary Engineering}
+
+  \vspace{1.2cm}
+  {\color{usydgold}\rule{0.6\linewidth}{1.5pt}}
+  \vspace{0.8cm}
+
+  {\LARGE\bfseries\color{usydnavy}
+    SoilSync: AI-Powered Irrigation\\[0.3em] Decisions for Water-Scarce Farmland
+  }
+
+  \vspace{0.5cm}
+  {\large\color{usydnavy} Final Report}
+
+  \vspace{0.6cm}
+  {\color{usydgold}\rule{0.6\linewidth}{1.5pt}}
+  \vspace{1.0cm}
+
+  {\large\bfseries\color{usydnavy} Team Members}\\[0.7em]
+  \begin{tabular}{ll}
+    \toprule
+    \textbf{Name} & \textbf{Role} \\
+    \midrule
+    Oscar Everett  & ML Modelling \& Model Evaluation \\
+    James Robison  & Project Lead \& Documentation \\
+    Angus Wyles    & Domain Researcher \& Report Writing \\
+    Byron Evans    & Data Engineer \& Analysis \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{1.2cm}
+  {\normalsize\color{usydnavy}
+    Semester 1, 2026 \quad $\cdot$ \quad \today
+  }
+
+  \vfill
+
+  {\color{usydnavy}\rule{\linewidth}{1pt}}
+  \vspace{0.2cm}
+  {\color{usydgold}\rule{\linewidth}{3pt}}
+
+\end{center}
+\end{titlepage}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section*{Executive Summary}
+\addcontentsline{toc}{section}{Executive Summary}
+% ══════════════════════════════════════════════════════════════════════════════
+
+This report presents SoilSync, a machine learning system that forecasts agricultural
+drought across 48 sensor stations in Kenya, Uganda and Rwanda. The work delivers
+on the core objective stated in the A1 proposal, a comparison of an LSTM
+network and a gradient-boosted regressor for short-range moisture forecasting,
+and extends it along three axes. The architectural comparison was broadened
+to four models (Random Forest, XGBoost, LSTM and a Temporal Fusion Transformer).
+The problem framing was extended from pure regression to a dedicated drought
+onset classification task that more closely mirrors the decision a farmer actually
+faces. A cross-station holdout test was added to quantify how well the models
+generalise to sensor locations they were not trained on.
+
+Four models were trained on 1{,}103{,}461 quality-flagged hourly readings from
+the International Soil Moisture Network, augmented by weather covariates from
+the NASA POWER API. On the regression task at 72\,h, after upgrading the
+sequence models to consume future weather through a dedicated encoder, the four
+architectures converged to within $\Delta R^2 < 0.01$: LSTM achieved
+$R^2 = 0.9367$, XGBoost $0.9302$, TFT $0.9272$ and Random Forest $0.9209$
+(MAE between 0.0144 and 0.0159\,m$^3$/m$^3$). All four substantially exceed
+the persistence baseline ($R^2 = 0.8822$), and the persistence improvement
+widens monotonically with horizon.
+
+The headline result is on the agriculturally critical task of \emph{drought
+onset detection at seven days}: identifying timesteps where soil moisture is
+currently adequate but will drop below 0.30\,m$^3$/m$^3$ within the next week.
+Evaluated on 301 distinct onset events with a 24-hour success tolerance,
+XGBoost catches 297 of 301 events (98.7\,\% event recall) at its best-F1
+threshold, Random Forest catches 296 (98.3\,\%), LSTM catches 179 of 191 (93.7\,\%)
+and TFT catches 167 of 191 (87.4\,\%). The persistence baseline catches zero
+by construction; a linear-trend physical baseline catches 155 (51.5\,\%).
+The estimated economic value of advance warning is \$58 to \$87 per hectare
+per season in avoided yield losses for smallholder maize farmers, representing
+16 to 24\,\% of gross seasonal revenue. On the station holdout test, Random Forest
+and XGBoost generalise to 8 unseen stations with no measurable degradation
+(holdout MAE within 0.001\,m$^3$/m$^3$ of the within-station benchmark). The
+TFT failed catastrophically on this test until its static feature encoder was
+regularised with dropout, an interpretable failure that we report in full. All
+reported metrics use observed future weather as a proxy for a forecast and
+therefore represent an upper bound on operational performance.
+
+\newpage
+\tableofcontents
+\newpage
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Project Overview, Objectives and Proposal Alignment}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Problem Statement and Users}
+
+Smallholder farmers in Sub-Saharan Africa represent 75\,\% of those experiencing
+famine and extreme poverty in the region, and in 95\,\% of cases depend entirely
+on seasonal rainfall rather than managed irrigation \cite{worldbank2008}.
+Agriculture accounts for 70\,\% of global freshwater withdrawals \cite{fao2017},
+yet reactive irrigation systems trigger watering only after soil moisture drops
+below a fixed threshold. This creates two structural inefficiencies: the lag
+between a sensor alert and any moisture change can exceed 12 hours on farms with
+slow-activating infrastructure, and the system has no awareness of incoming
+rainfall, so fields may be irrigated even when significant precipitation is
+forecast within 18 hours. Water spent irrigating ahead of forecast rainfall
+cannot be recovered.
+
+A multi-day moisture forecast addresses both deficiencies. It gives farmers
+sufficient lead time to avoid redundant irrigation and to triage water use
+across multiple plots when labour, pump capacity or water access is constrained.
+The primary intended users are smallholder farmers and agricultural cooperatives
+in East Africa, with secondary users including agronomic consultants, food
+security NGOs and government water allocation agencies.
+
+\subsection{Objectives}
+
+The project pursued three objectives. The primary objective was to build and
+compare machine learning models forecasting volumetric soil moisture at horizons
+of 24 to 168 hours, and to determine which architecture generalises better
+across geographic regions and seasons. The secondary objective was to assess
+decision-support value through a dedicated drought \emph{onset} classifier:
+correctly identifying upcoming moisture stress before it begins is of greater
+agricultural consequence than reproducing the slow background trend that a
+naive persistence model also captures. The third objective was to characterise
+limitations honestly, particularly the substitution of observed future weather
+for a real numerical weather prediction (NWP) forecast, which bounds reported
+metrics as an upper limit rather than an operational estimate.
+
+\subsection{Alignment with the A1 Proposal}
+
+The A1 proposal committed to training and comparing an LSTM network and an
+XGBoost regressor, evaluating both using RMSE and MAE across 24, 48 and 72-hour
+horizons. The final project delivered on all of these commitments. Four extensions
+were made beyond the original scope. First, a Random Forest and a Temporal Fusion
+Transformer were added to the comparison, enriching the architectural analysis
+without changing the original framing. Second, the evaluation horizon was extended
+to 168 hours (seven days). Third, the sequence models (LSTM and TFT) were given
+explicit access to future weather inputs through a dedicated encoder branch, so
+the comparison against XGBoost is no longer asymmetric. Fourth, a standalone
+drought onset classification task was added with three baselines (persistence,
+linear-trend extrapolation, and the four ML models), reporting per-sample,
+tolerant and event-level metrics. The geographic scope remained Uganda and Kenya
+as proposed, with Rwanda added when the ISMN data pull returned stations there
+as well. The data sources (ISMN and a weather API) and the evaluation metrics
+(RMSE, MAE, recall, ROC AUC) matched the proposal exactly.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Data Sources, Preprocessing and Evaluation Strategy}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Soil Moisture Data}
+
+Soil moisture data was sourced from the International Soil Moisture Network
+(ISMN), the global reference database for in-situ soil moisture observations.
+Two sub-networks were used: TAHMO (Trans-African Hydro-Meteorological Observatory)
+contributing 46 stations and COSMOS (COsmic-ray Soil Moisture Observing System)
+contributing 2 stations (KLEE and Mpala North). Geographic coverage spans Kenya
+(approximately 30 stations), Uganda (approximately 10 stations) and Rwanda
+(approximately 8 stations), with environments ranging from coastal lowlands
+(Likoni, Base Titanium Dam) and highland forest (Kitabi College, IPRC Musanze)
+to savanna (Maasai Mara cluster) and urban settings (Kampala KCCA school cluster).
+Total temporal coverage spans 2016 to 2026 at hourly resolution. After quality
+filtering, the dataset comprised 1{,}103{,}461 readings in volumetric water
+content (m$^3$/m$^3$) at predominantly 0.2\,m sensor depth.
+
+Raw data was distributed as ISMN \texttt{.stm} plain-text files and processed
+through a bespoke cleaning pipeline. Only readings with a \texttt{G} (Good)
+quality flag were retained. Sentinel no-data values of $-9999$ and $-999$ were
+converted to \texttt{NaN}, duplicate timestamps were resolved by retaining the
+first occurrence, and data was resampled to a uniform hourly grid by linear
+interpolation capped at a maximum gap of six hours. Longer gaps remained as
+\texttt{NaN} and were dropped at dataset construction time.
+
+\subsection{Weather Data and Derived Features}
+
+Weather covariates were obtained from the NASA POWER reanalysis API, which
+provides complete global daily coverage with no missing values, making it
+suitable for remote agricultural stations with limited ground-based
+instrumentation. Seven variables were retrieved per station: mean, maximum and
+minimum air temperature at 2\,m, relative humidity, corrected precipitation,
+wind speed and all-sky surface shortwave solar radiation. A derived variable,
+reference evapotranspiration (ET$_0$), was computed from these using the
+Hargreaves-Samani equation:
+\begin{equation}
+  \text{ET}_0 = 0.0023 \times \frac{R_a}{0.408} \times (T_{\text{mean}} + 17.8)
+  \times \sqrt{T_{\max} - T_{\min}}
+\end{equation}
+where $R_a$ is solar radiation converted to equivalent mm/day by dividing by
+0.408. ET$_0$ quantifies atmospheric demand on soil water and is the primary
+driver of moisture loss between rainfall events. Because weather data is daily
+and soil moisture is hourly, daily weather values were broadcast across all
+24 hours of each corresponding day. This approximation means each hourly timestep
+within a day carries identical weather values, limiting the ability of sequence
+models to exploit short-term weather dynamics.
+
+\subsection{Train/Test Split and Evaluation Metrics}
+
+The dataset was split per station using a chronological 80/20 partition. The
+earliest 80\,\% of each station's readings formed the training set and the most
+recent 20\,\% formed the test set. This per-station chronological split prevents
+both temporal leakage (no future data is seen during training) and cross-station
+contamination. Starting in Test~8, the same unified split was applied across
+tabular and sequence builders, so XGBoost, Random Forest, LSTM and TFT are now
+evaluated on the same per-station temporal partition rather than the global
+80/20 index split used in earlier sequence runs.
+
+Regression performance was evaluated using MAE (mean absolute error,
+m$^3$/m$^3$), RMSE and $R^2$. The persistence baseline predicts that soil
+moisture at time $t+h$ equals the soil moisture 24 hours prior, providing the
+appropriate lower bound for practical utility.
+
+For the drought onset task, three layers of metrics are reported:
+\begin{itemize}
+  \item \textbf{Per-sample exact}: each hourly test sample is classified as
+        onset if current moisture is $\geq 0.30$\,m$^3$/m$^3$ and the moisture
+        at exactly $t+h$ is $< 0.30$\,m$^3$/m$^3$. ROC AUC and PR AUC
+        summarise discrimination across all probability thresholds.
+  \item \textbf{Per-sample tolerant}: the sample is considered a true onset
+        if drought occurs within a configurable window after the target time
+        (24\,h in the final test). This avoids penalising the model for
+        predicting an onset 18 hours before it materialises.
+  \item \textbf{Event-level}: hourly samples are collapsed into contiguous
+        warning/onset events. Event recall, event precision and event F1 are
+        reported because a single missed event corresponds to one real
+        agricultural failure, whereas a single missed hour does not.
+\end{itemize}
+Recall is prioritised over precision because a missed drought onset (false
+negative) is agriculturally more costly than a false alarm.
+
+The proposal defined success as MAE within 5\,\% of the observed moisture range.
+The final XGBoost model achieved MAE of 0.0149\,m$^3$/m$^3$ at 72 hours, the
+LSTM achieved 0.0144\,m$^3$/m$^3$. Across the test stations, the observed
+moisture range spans approximately 0.05 to 0.55\,m$^3$/m$^3$, giving a range
+of approximately 0.50\,m$^3$/m$^3$. The final MAE values therefore represent
+roughly 2.9 to 3.0\,\% of this range, satisfying the success criterion with
+margin.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Methodology and Technical Design}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Feature Engineering}
+
+For the tree-based models, each row in the feature matrix represents one
+timestep at one station. Soil moisture history is encoded as the current
+reading plus five lag features (\texttt{sm\_lag\_24h} through
+\texttt{sm\_lag\_120h}), covering a full five-day window. Rolling statistics
+over 72 and 168 hours (mean and standard deviation, each shifted one hour to
+prevent lookahead) encode trend and volatility. Temporal features (hour, month,
+day of year) capture diurnal and seasonal cycles. Station metadata (latitude,
+longitude, elevation, sensor depth) provides geographic and physical context.
+The eight weather variables including ET$_0$ are appended as current-time
+features.
+
+A critical design decision was the inclusion of forward weather windows. To
+simulate having a weather forecast, the model also receives actual observed
+weather at each 24-hour step from $t+24$\,h up to the prediction horizon.
+For the 72-hour horizon this adds $3 \times 8 = 24$ additional features; for
+168\,h it adds $7 \times 8 = 56$. This constitutes an upper bound on
+operational performance because real deployment would use NWP forecast values,
+which carry their own prediction errors.
+
+For sequence models (LSTM and TFT), a sliding window of 120 recent hourly
+readings is passed as input. With weather channels, the input shape is
+$(120, 9)$: 120 timesteps across nine channels comprising the soil moisture
+value, seven NASA POWER variables and ET$_0$. Starting in Test~8, the LSTM
+and TFT were extended with a dedicated future-weather encoder branch: the
+$(h/24) \times 8$ matrix of future weather values is flattened, passed through
+a small dense block (32-unit ReLU for LSTM; 16-unit ELU with layer
+normalisation for TFT) and concatenated to the recurrent representation before
+the output head. This closes the asymmetry that previously gave XGBoost an
+unfair advantage over the sequence models. Each channel is normalised using
+mean and standard deviation computed on the training split only.
+
+\subsection{Model Architectures and Justification}
+
+\textbf{Random Forest} uses an ensemble of 200 decision trees
+(\texttt{max\_depth = 10}, \texttt{max\_features = sqrt}). As a bagging
+ensemble it provides a strong and interpretable baseline for the tabular
+feature set.
+
+\textbf{XGBoost} uses gradient-boosted trees with histogram-based split finding.
+Final parameters were \texttt{n\_estimators = 300}, \texttt{max\_depth = 5},
+\texttt{learning\_rate = 0.05}, \texttt{subsample = 0.8} and
+\texttt{colsample\_bytree = 0.8}. Unlike Random Forest, XGBoost builds trees
+sequentially, each correcting the residuals of the previous ensemble.
+
+\textbf{LSTM} was selected because recurrent architectures are well suited to
+sequential time series where moisture at a given hour depends on prior
+conditions. The final architecture is \texttt{LSTM(64, return\_sequences=True)}
+$\to$ \texttt{Dropout(0.2)} $\to$ \texttt{LSTM(32)} $\to$ \texttt{Dropout(0.2)},
+concatenated with the encoded future-weather vector, then
+\texttt{Dense(16, ReLU)} $\to$ \texttt{Dense(1)}.
+
+\textbf{TFT} extends the LSTM with a static feature encoder that injects
+station metadata (latitude, longitude, elevation, depth) at every timestep,
+and multi-head self-attention (4 heads, \texttt{key\_dim = 16}) that allows
+the model to explicitly weight specific past timesteps. A gated residual
+connection (sigmoid gate, add, layer normalisation) precedes the future-weather
+fusion and output layers. Training uses a lower learning rate
+($1\mathrm{e}{-4}$, with \texttt{clipnorm=1.0} and \texttt{ReduceLROnPlateau})
+after earlier instability was traced to gradient explosion under the original
+LSTM-equivalent settings.
+
+\subsection{Drought Onset Classifier}
+
+For the classification task a parallel pipeline reuses the same feature
+builders, applies the same per-station temporal split, then \emph{filters}
+both train and test sets to samples that are currently above the drought
+threshold. The label is whether moisture at the target time crosses below
+0.30\,m$^3$/m$^3$. Class imbalance is handled via
+\texttt{class\_weight=`balanced'} for Random Forest and Keras models, and via
+\texttt{scale\_pos\_weight} for XGBoost. Per-class thresholds are then swept
+from 0.01 to 0.99 and three operating points are reported: the default
+0.5 threshold, the best-F1 threshold, and the threshold that maximises recall
+subject to a false-alarm-rate ceiling of 0.05. Two additional baselines were
+added to give the classifier a meaningful comparator: a persistence baseline
+(which by construction predicts no onset for currently-wet samples and therefore
+achieves zero recall) and a \emph{linear-trend} physical baseline that
+extrapolates the 24-hour slope to the forecast horizon and applies a sigmoid
+to the crossing distance.
+
+\subsection{Experiment Progression}
+
+Fourteen experiments were run sequentially. Tests 2--7 (described in earlier
+deliverables) established the regression pipeline, added weather features,
+extended lag history, introduced the TFT, fixed normalisation leakage and
+tuned hyperparameters, culminating in Test~7 with XGBoost at $R^2 = 0.9305$
+at 72\,h. Test~8 unified the train/test split across all four models, giving
+the sequence models the same per-station temporal partition. Test~8b added
+oracle future-weather inputs to LSTM and TFT through the dedicated encoder
+branch described above. Test~9 stabilised TFT training and added threshold
+optimisation. Test~10 re-ran all four models under the unified pipeline and
+added the first onset-event diagnostics. Test~11 ran a controlled
+weather-vs-no-weather ablation at the 120-hour horizon across all four
+architectures. Tests 12--14 then built out the dedicated drought onset
+classifier: Test~12 introduced tolerant labels and event-level metrics, Test~13
+added the linear-trend physical baseline, and Test~14 (the final configuration)
+runs onset classification at the 168-hour horizon with a 24-hour success
+tolerance, broadened training labels and the full six-classifier comparison.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Findings and Analysis}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Final Regression Performance at 72 Hours}
+
+\begin{table}[H]
+\centering
+\caption{Regression performance at the 72-hour prediction horizon under the
+unified per-station split, with future-weather inputs available to all four
+models (Test~10). The four architectures converge to within
+$\Delta R^2 < 0.02$. LSTM achieves the lowest MAE; XGBoost achieves the
+highest $R^2$ on the tabular target while LSTM and TFT win on the sequence
+target.}
+\label{tab:final_results}
+\begin{tabularx}{\linewidth}{lXXXX}
+\toprule
+\textbf{Model} & \textbf{MAE (m$^3$/m$^3$)} & \textbf{$R^2$} & \textbf{Recall} & \textbf{ROC AUC} \\
+\midrule
+Persistence    & 0.0187 & 0.8822 & \textendash & \textendash \\
+Random Forest  & 0.0159 & 0.9209 & 0.977 & 0.970 \\
+XGBoost        & 0.0149 & 0.9302 & 0.977 & 0.974 \\
+LSTM           & \textbf{0.0144} & \textbf{0.9367} & 0.975 & \textbf{0.979} \\
+TFT            & 0.0157 & 0.9272 & \textbf{0.978} & \textbf{0.980} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The predicted versus actual scatter plots in Figure~\ref{fig:predvsactual}
+show that all four models now achieve tight clustering around the diagonal
+across the full moisture range. The earlier finding that LSTM and TFT scattered
+heavily at extreme low-moisture values no longer holds once the sequence
+models receive future-weather inputs through the dedicated encoder branch.
+This is corroborated by the residual distributions in
+Figure~\ref{fig:residuals}: all four model residual distributions are tightly
+centred near zero, and the four architectures are now meaningfully
+indistinguishable on bulk regression metrics. The remaining differences emerge
+on the drought-onset task discussed below.
+
+\realfig{predicted_vs_actual.png}{predvsactual}{Predicted versus
+actual soil moisture (m$^3$/m$^3$) for all four models at the 72-hour
+horizon (Test~10). After unifying the temporal split and giving the sequence
+models the same future-weather access as XGBoost, the four architectures all
+cluster tightly around the diagonal.}
+
+\realfig{residuals.png}{residuals}{Residual distributions for all four
+models at the 72-hour horizon. All four are tightly centred near zero, with
+LSTM showing the narrowest distribution.}
+
+\subsection{Weather Feature Contribution (Test 11)}
+
+A controlled weather-vs-no-weather ablation was run at the 120-hour horizon
+across all four model families (Test~11). The results in
+Table~\ref{tab:weather_ablation} show that adding weather and future-weather
+inputs improves MAE by roughly 9 to 18\,\% across architectures, with XGBoost
+gaining the most in absolute terms (MAE $0.0235 \to 0.0193$, $R^2$
+$0.870 \to 0.902$). LSTM is the most weather-efficient model in relative
+terms: it already performs strongly at 120\,h without weather ($R^2 = 0.891$)
+and improves modestly to 0.901. Figure~\ref{fig:weatherimpact} visualises this
+benefit as bar charts. The qualitative finding from the earlier report holds:
+the weather contribution grows with horizon, because the autocorrelation of
+the lag signal weakens while knowledge of future precipitation and
+evapotranspiration becomes proportionally more informative.
+
+\begin{table}[H]
+\centering
+\caption{Weather-vs-no-weather ablation at the 120-hour horizon across all
+four models (Test~11). All four architectures improve substantially when given
+forward weather information.}
+\label{tab:weather_ablation}
+\begin{tabularx}{\linewidth}{lXXXXX}
+\toprule
+\textbf{Model} & \textbf{Weather} & \textbf{MAE} & \textbf{RMSE} & \textbf{$R^2$} & \textbf{Recall} \\
+\midrule
+Random Forest & no  & 0.0236 & 0.0343 & 0.8650 & 0.970 \\
+Random Forest & yes & 0.0208 & 0.0315 & 0.8856 & 0.977 \\
+XGBoost       & no  & 0.0235 & 0.0336 & 0.8698 & 0.966 \\
+XGBoost       & yes & 0.0193 & 0.0292 & 0.9021 & 0.972 \\
+LSTM          & no  & 0.0214 & 0.0352 & 0.8914 & 0.984 \\
+LSTM          & yes & 0.0208 & 0.0337 & 0.9009 & 0.974 \\
+TFT           & no  & 0.0240 & 0.0390 & 0.8668 & 0.967 \\
+TFT           & yes & 0.0203 & 0.0334 & 0.9021 & 0.962 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\realfig{weather_ablation_mae_bar.png}{weatherimpact}{Weather-vs-no-weather
+ablation at the 120-hour horizon (Test~11). All four model families benefit
+substantially from forward weather information, with XGBoost showing the
+largest absolute MAE reduction.}
+
+\subsection{Horizon Analysis}
+
+\begin{table}[H]
+\centering
+\caption{XGBoost with weather versus the persistence baseline across all
+prediction horizons (Test~10). The $R^2$ gap over persistence increases
+monotonically with horizon length, confirming that the model adds
+proportionally more value where naive forecasts are weakest.}
+\label{tab:horizons}
+\begin{tabularx}{\linewidth}{lXXXXXX}
+\toprule
+\textbf{Horizon} & \textbf{Persist MAE} & \textbf{XGB MAE} & \textbf{MAE Improv.} & \textbf{Persist $R^2$} & \textbf{XGB $R^2$} & \textbf{$R^2$ Gap} \\
+\midrule
+$t+24$\,h  & 0.0121 & 0.0079 & 34.7\,\% & 0.9363 & 0.9692 & $+$0.033 \\
+$t+48$\,h  & 0.0157 & 0.0120 & 23.6\,\% & 0.9083 & 0.9476 & $+$0.039 \\
+$t+72$\,h  & 0.0187 & 0.0149 & 20.3\,\% & 0.8822 & 0.9302 & $+$0.048 \\
+$t+96$\,h  & 0.0212 & 0.0173 & 18.4\,\% & 0.8566 & 0.9159 & $+$0.059 \\
+$t+120$\,h & 0.0235 & 0.0193 & 17.9\,\% & 0.8313 & 0.9032 & $+$0.072 \\
+$t+168$\,h & 0.0273 & 0.0224 & 17.9\,\% & 0.7864 & 0.8813 & $+$0.095 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Figure~\ref{fig:horizoncomp} illustrates the degradation in MAE and $R^2$ with
+horizon for both XGBoost and persistence. While absolute performance declines
+for both, the gap between XGBoost and persistence widens monotonically: the
+$R^2$ advantage grows from $+0.033$ at one day to $+0.095$ at seven days. The
+high absolute $R^2$ values reflect the inherent autocorrelation of soil
+moisture, a slow-moving physical variable. Persistence achieves $R^2 = 0.936$
+at 24 hours with no modelling; the incremental improvement over this baseline,
+not the absolute value, is the correct measure of model contribution.
+
+\realfig{horizon_comparison.png}{horizoncomp}{MAE and $R^2$ versus
+prediction horizon (24\,h to 168\,h) for XGBoost and the persistence baseline
+(Test~10). The performance gap between XGBoost and persistence widens at longer
+horizons.}
+
+\subsection{Drought Onset Detection at Seven Days (Test 14)}
+
+The decision-relevant task is not bulk regression but drought \emph{onset}
+detection at long horizons: soil moisture is currently adequate but will drop
+below 0.30\,m$^3$/m$^3$ within the forecast window. Test~14 evaluates this at
+$t+168$\,h with a 24-hour success tolerance --- a true positive is recorded if
+drought is observed at any point from 168\,h to 192\,h after the prediction is
+made --- and collapses contiguous hourly predictions into events. This event
+view is what matters operationally: a farmer cares about how many real onset
+events the system catches, not how many individual hourly samples align.
+
+\begin{table}[H]
+\centering
+\caption{Event-level drought onset detection at $t+168$\,h with 24\,h success
+tolerance, evaluated at each model's best-F1 threshold (Test~14). Event recall
+is the fraction of distinct real onset events the model issued at least one
+warning for; event precision is the fraction of issued warning events that
+correspond to a real onset. The tabular models share the test set; LSTM and
+TFT share a slightly different test set due to the sequence builder's window
+constraints.}
+\label{tab:onset_events}
+\begin{tabularx}{\linewidth}{lXXXXX}
+\toprule
+\textbf{Model} & \textbf{Actual events} & \textbf{Caught} & \textbf{Event recall} & \textbf{Event precision} & \textbf{Event F1} \\
+\midrule
+Persistence    & 301 & 0   & 0.000 & \textendash & 0.000 \\
+Linear Trend   & 301 & 155 & 0.515 & 0.391 & 0.445 \\
+Random Forest  & 301 & 296 & \textbf{0.983} & 0.778 & 0.869 \\
+\textbf{XGBoost} & 301 & \textbf{297} & \textbf{0.987} & 0.747 & 0.850 \\
+LSTM           & 191 & 179 & 0.937 & 0.722 & 0.816 \\
+TFT            & 191 & 167 & 0.874 & 0.764 & 0.815 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The pattern is clear. Persistence is structurally unable to predict any onset
+event because it forecasts no change from a currently-wet sample. A naive
+physical baseline that extrapolates the recent moisture slope catches roughly
+half the events but with poor precision (39\,\%, meaning over half its
+warnings are false alarms). The four learned models all exceed 87\,\% event
+recall. The tree-based models lead, with XGBoost catching 297 of 301 real
+onset events (98.7\,\%) and Random Forest catching 296 (98.3\,\%). At their
+best-F1 thresholds, both maintain roughly 75 to 78\,\% event precision ---
+meaning that of every four issued warnings, three correspond to a genuine
+upcoming onset.
+
+At the more conservative operating point that bounds the false-alarm rate
+below 0.05, all four learned models still detect roughly 90\,\% of real onset
+events (Random Forest 92.0\,\%, XGBoost 92.0\,\%, LSTM 88.0\,\%, TFT 81.2\,\%),
+demonstrating that high recall is not contingent on accepting an unmanageable
+false-alarm load.
+
+\realfig{drought_onset_curves.png}{onsetcurves}{Drought onset
+classifier curves at $t+168$\,h with 24\,h tolerance (Test~14). Precision-recall
+(left) and ROC (right) curves. XGBoost achieves the highest ROC AUC (0.946) and
+PR AUC (0.819). The linear-trend baseline (gray) sits well below the learned
+models, and persistence (black) lies on the no-skill diagonal.}
+
+\realfig{drought_onset_precision_recall_bar.png}{onsetbar}{Onset
+recall and precision at the best-F1 threshold for each classifier (Test~14).
+The four learned models cluster in the same region. XGBoost and Random Forest
+lead, the linear-trend baseline lags well behind, and persistence catches no
+onset events.}
+
+Figure~\ref{fig:recallhorizon} shows recall and ROC AUC trajectories from
+earlier horizon sweeps. The recall advantage of the learned models over
+persistence and the linear-trend baseline is consistent across all horizons,
+confirming that the seven-day result is not a single-horizon artefact.
+
+\realfig{recall_vs_horizon.png}{recallhorizon}{Onset recall and ROC
+AUC versus prediction horizon (24\,h to 168\,h) for all models. The four
+learned models maintain high recall across all horizons. The persistence
+baseline is structurally unable to detect onsets in wet samples.}
+
+\subsection{Feature Importance}
+
+Figure~\ref{fig:featimportance} shows XGBoost feature importance for the
+168-hour drought onset classifier (top 20 features from Test~14). The current
+soil moisture reading dominates ($0.118$), followed by rolling moisture
+statistics over 72 and 168 hours, then a cluster of future precipitation
+features at $t+72$, $t+96$ and $t+120$ hours. This is intuitive: at the
+seven-day horizon, the model needs to know how wet the soil is now, how its
+recent trend has been moving, and how much rain is expected mid-window.
+ET$_0$ features at multiple future horizons appear consistently in the top 20,
+confirming that atmospheric evaporative demand is a real signal rather than
+noise. Station metadata (latitude, longitude, elevation) contributes modest
+but non-trivial importance, justifying its inclusion in the feature matrix.
+
+\realfig{feature_importance.png}{featimportance}{XGBoost feature importance for
+the 72-hour regression model (Test~10, top 20 features by gain). Current soil
+moisture and rolling soil moisture statistics dominate, followed by future
+precipitation and ET$_0$ features at the mid-window horizons. The same ranking
+holds for the 168-hour onset classifier.}
+
+\subsection{Cross-Station Generalisation (Test 17)}
+
+The per-station temporal split used in Tests 8 to 14 trains and tests on the
+same 48 sensors at different times. That is the right evaluation for whether
+the model can forecast forward in time at known locations. It does not answer
+the operationally important question of whether the model still works at new
+locations the system was never trained on. Test 17 addresses this directly by
+holding out 8 of the 48 stations from training entirely, stratified by country
+(3 Kenya, 4 Uganda, 1 Rwanda), and evaluating all four architectures on the
+held-out stations. The remaining 40 stations form the training set.
+
+Table~\ref{tab:holdout} reports the headline numbers. Random Forest and XGBoost
+generalise to unseen stations with no measurable degradation. Both achieve a
+holdout MAE within 0.0006\,m$^3$/m$^3$ of their within-station MAE in Test~10,
+and $R^2$ values within 0.02 of their within-station scores. The deployed
+XGBoost classifier is therefore usable at new stations without retraining,
+which is the most consequential finding for operational viability.
+
+\begin{table}[H]
+\centering
+\caption{Regression performance on 8 held-out stations not seen during training
+(Test~17, with weather features, $t+72$\,h). Within-station MAE is reproduced
+from Table~\ref{tab:final_results} for comparison.}
+\label{tab:holdout}
+\begin{tabularx}{\linewidth}{lXXXX}
+\toprule
+\textbf{Model} & \textbf{Within-station MAE} & \textbf{Holdout MAE} & \textbf{Holdout $R^2$} & \textbf{Holdout ROC AUC} \\
+\midrule
+Random Forest & 0.0159 & 0.0154 & 0.943 & 0.987 \\
+XGBoost & 0.0149 & 0.0145 & 0.946 & 0.987 \\
+LSTM & 0.0144 & 0.0215 & 0.912 & 0.982 \\
+TFT (with static-encoder dropout) & 0.0157 & 0.0264 & 0.872 & 0.968 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\realfig{mae_by_model.png}{holdoutbars}{Cross-station holdout MAE by model and
+weather configuration (Test~17). Tree models are essentially unaffected by the
+switch from within-station to cross-station evaluation. The LSTM bar is the
+inverted case where adding weather features actually raises holdout MAE.}
+
+The LSTM result depends strongly on the feature set. Without weather features,
+LSTM achieves MAE 0.0139 and $R^2$ 0.942 on the 8 unseen stations, slightly
+better than its within-station benchmark. Adding the weather and future-weather
+inputs raises MAE to 0.0215 and lowers $R^2$ to 0.912. The likely explanation
+is that the additional 24 weather channels per timestep give the network more
+degrees of freedom to learn station-specific patterns that fail to transfer.
+The same trade-off does not hurt the tree models, which still benefit from
+weather (XGBoost MAE 0.0165 with no weather, 0.0145 with weather).
+
+\subsubsection*{TFT failure mode and fix}
+
+The TFT result required architectural investigation. In its original
+configuration, the architecture used in Tests 8 through 14, the TFT scored MAE
+0.0903 and $R^2 = -0.593$ with weather features on the holdout set. A negative
+$R^2$ means the model performs worse than predicting the training mean for every
+sample. Per-station holdout $R^2$ ranged from $-1.6$ to $-16.7$. ROC AUC for
+the same predictions was 0.831, much higher than the negative $R^2$ would
+suggest. This divergence between regression accuracy and ranking accuracy was
+diagnostic. The predictions retained their relative ordering within each unseen
+station but were systematically biased in absolute value.
+
+The bias source was traced to the static feature encoder. The encoder consumes
+(latitude, longitude, elevation, depth) through two dense layers and broadcasts
+the result across every timestep of the input sequence. With no regularisation
+it learns a per-station offset table, which works under the within-station
+split but produces incorrect baselines when fed coordinates from stations it
+never saw during training. Adding a single \texttt{Dropout(0.2)} layer inside
+the static encoder forces the rest of the network to function with intermittently
+dropped station identifiers during training, which breaks the offset-table
+behaviour. With this one change the TFT achieves MAE 0.0264 and $R^2 = 0.872$
+on the holdout set, which puts it back in the same performance band as the
+other three models.
+
+This finding is worth recording for two reasons. The first is that the same
+architecture scored well in both Test~10 ($R^2 = 0.927$) and Test~14 (event
+recall 0.874, event F1 0.815). Neither result gave any indication that the
+model could not generalise to a new sensor. Within-station evaluation hides any
+failure mode that depends on station identity, and classification thresholding
+hides any failure mode that depends on absolute calibration. Both blind spots
+applied to the original TFT evaluation. The second is that the fix is a single
+dropout layer in a specific location, not a more capable architecture or more
+data. The failure was localised to the static feature pathway, and so was its
+remedy.
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Architectural Comparison Revisited}
+
+The original framing in earlier deliverables --- that XGBoost outperforms
+sequence models because it has unfair access to explicit lag and future-weather
+features --- no longer holds in the final pipeline. Once LSTM and TFT receive
+future weather through a dedicated encoder branch (Test~8b onward) and once
+the train/test split is unified across all four model families (Test~8), the
+four architectures converge to within $\Delta R^2 < 0.02$ on the regression
+task at 72 hours. LSTM in fact achieves the lowest MAE (0.0144\,m$^3$/m$^3$)
+and the highest $R^2$ (0.9367), with TFT closely behind on ROC AUC (0.980).
+
+Where the architectures \emph{do} differ is on the operational drought-onset
+task. The tree-based models lead at both the per-sample level (XGBoost ROC AUC
+0.946 vs.\ LSTM 0.895 and TFT 0.892 on tolerant labels) and the event level
+(XGBoost event recall 0.987 vs.\ LSTM 0.937 and TFT 0.874 at best-F1). The
+likely explanation is that the boosted trees can exploit thousands of explicit
+lag and future-weather interactions through their tabular split structure,
+whereas the sequence models compress the same information through a learned
+recurrent representation that loses some of the sharp threshold-crossing
+signals that determine onset. This is consistent with the broader literature
+on tabular vs.\ sequence models for structured time-series forecasting.
+
+The cross-station holdout result in Section~4.7 reinforces this picture and
+adds nuance. Random Forest and XGBoost generalise to unseen stations almost
+perfectly, with holdout MAE essentially identical to within-station MAE. The
+LSTM generalises well without weather but degrades when weather is added,
+which suggests the extra channels invite station-specific overfitting that the
+tree models structurally avoid. The TFT in its original form did not generalise
+at all, and only became competitive after the static encoder was regularised.
+The hierarchy on the holdout test is therefore the same as on within-station
+data (RF and XGBoost ahead of LSTM ahead of TFT), but the gap between tree
+ensembles and the sequence models widens once generalisation to new sensors
+is what is being measured.
+
+\subsection{Limitations}
+
+Six limitations bound the validity of the reported results. First, and most
+critically, all experiments use observed future weather rather than a weather
+forecast. In deployment, inputs at $t+24$ through $t+168$ hours would be drawn
+from an NWP model carrying its own prediction errors, most significant at
+longer horizons. The reported metrics are an upper bound, not an operational
+estimate.
+
+Second, the cross-station holdout test in Section~4.7 covers 8 stations from
+the same two sensor networks (TAHMO and COSMOS) and the same three-country
+region. Performance on a different sensor type, instrument calibration regime
+or climate (for example South Asian rice paddies, North American corn belt,
+semi-arid Sahel) is unknown and would require additional data to validate.
+The result is that we can claim deployment readiness within the East African
+TAHMO network but not, on the current evidence, globally.
+
+Third, daily weather resolution broadcast to hourly soil moisture means each
+LSTM and TFT timestep within a day carries identical weather values, limiting
+exploitation of sub-daily dynamics.
+
+Fourth, the 0.30\,m$^3$/m$^3$ drought threshold is a general guideline and is
+not calibrated to specific crops or soil types at each station. Different
+crops and soils have different wilting points; the threshold should ultimately
+be parametrised per deployment.
+
+Fifth, the model lacks soil texture data. Clay fraction and sand fraction
+fundamentally determine how moisture moves through the soil profile; the
+SoilGrids API provides this globally at no cost.
+
+Sixth, all sensors operate at 0.2\,m depth. Root zone moisture integrated over
+0 to 1\,m is more directly relevant to crop yield decisions than near-surface
+readings alone.
+
+\subsection{Stakeholders, Impact and Ethics}
+
+The primary users are smallholder farmers and agricultural cooperatives
+deciding when and how much to irrigate. Secondary stakeholders include
+agronomic consultants, food security NGOs and government water allocation
+agencies. A seven-day advance warning of moisture stress gives farmers time
+to prioritise irrigation across multiple plots before crop stress begins,
+which a threshold alarm system cannot provide. Importantly, the event-level
+framing of the final classifier means the system issues a small number of
+durable warnings (one per upcoming event) rather than thousands of correlated
+hourly alerts.
+
+Using conservative FAO-based assumptions for East African smallholder maize
+production, the estimated economic value of the model over persistence is
+\$58 to \$87 per hectare per season in avoided yield losses, representing
+16 to 24\,\% of gross seasonal revenue on a \$360 per hectare base. This
+estimate assumes the farmer has water access and acts on the warning; it does
+not account for irrigation infrastructure costs or the cost of false alarms,
+and should be treated as an illustrative order-of-magnitude figure.
+
+The ethical obligations of deploying this system are substantive. ISMN data
+skews toward North America and Europe; performance in Sub-Saharan Africa must
+be explicitly validated and any degradation honestly reported. An incorrect
+forecast could cost a farmer an entire season's crop, and silent failure could
+cause systematic mismanagement across many farms before detection. Any
+deployment must present prediction intervals and explicit operating points
+(default, best-F1, low-false-alarm) rather than a single point estimate, so
+that forecast uncertainty is communicated alongside the forecast itself. The
+open data sources (ISMN, NASA POWER) and reproducible pipeline keep the
+system accessible to users who cannot afford proprietary platforms. All data
+used is publicly available and fully anonymised.
+
+\subsection{Demo Application}
+
+A live Plotly Dash application was built to demonstrate the final pipeline
+end-to-end. The app loads the pre-trained XGBoost onset classifier and exposes
+the seven-day drought outlook for each station in the network, with the
+leaderboard, station drivers, network map and motion layer reorganised to
+foreground the drought-onset narrative rather than raw moisture values. The
+app illustrates how the operating-point selection (default, best-F1, low
+false-alarm) would surface to a farmer-facing interface.
+
+\subsection{Recommendations and Future Work}
+
+The highest-priority extension is coupling the system with a real NWP forecast
+model to replace observed future weather, converting the reported upper bound
+into an operational performance estimate. The second priority is a broader
+cross-region holdout that extends Section~4.7 beyond the TAHMO network and the
+three current countries, ideally to a sensor network with different soil
+profiles and climate. Adding soil texture features from SoilGrids, incorporating
+monthly NDVI as a proxy for plant transpiration demand, implementing quantile
+regression in XGBoost to produce prediction intervals on the regression task,
+and disaggregating performance by season (long rains March to May, dry June
+to August, short rains October to December) would each improve agricultural
+specificity. For the sequence models, a richer fusion mechanism between the
+recurrent representation and the future-weather encoder (cross-attention
+rather than late concatenation) is a natural next step and could close the
+remaining onset-recall gap to the tree-based models. The static encoder
+diagnostic from Section~4.7 also suggests that any future model with static
+covariates should be regularised in that pathway by default and stress-tested
+under a cross-entity holdout before being trusted at new locations.
+
+Commercially, the system occupies a position between free general-purpose
+weather services and expensive proprietary precision agriculture platforms.
+The open pipeline and freely accessible data sources make the approach
+reproducible and extensible. A viable deployment pathway would integrate the
+seven-day onset classifier with a simple mobile interface, delivering
+event-level drought warnings and irrigation priority rankings directly to
+farmers. Revenue could be structured as a cooperative subscription, with costs
+shared across member farms.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\newpage
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\newpage
+\appendix
+\section*{Appendix A: Team Organisation}
+\addcontentsline{toc}{section}{Appendix A: Team Organisation}
+
+Roles were divided based on each member's strengths and prior coursework,
+agreed during an initial planning meeting.
+
+\begin{table}[H]
+\centering
+\caption{Team roles and primary responsibilities.}
+\begin{tabularx}{\linewidth}{llX}
+\toprule
+\textbf{Member} & \textbf{Role} & \textbf{Responsibilities} \\
+\midrule
+James Robison  & Project Lead      & Scoping, dataset sourcing, timeline management \\
+Oscar Everett  & ML Engineer       & Model development, hyperparameter tuning, evaluation \\
+Byron Evans    & Data Engineer     & Cleaning pipeline, feature engineering, dataset validation \\
+Angus Wyles    & Domain Researcher & Literature review, domain context, report writing \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Task tracking was managed through a shared Jira board and all code was version
+controlled in a shared GitHub repository. The team met weekly to review
+progress against the work plan proposed in A1.
+
+\section*{Appendix B: Generative AI Usage}
+\addcontentsline{toc}{section}{Appendix B: Generative AI Usage}
+
+Generative AI tools were used in a supporting capacity during this project.
+Claude (Anthropic) was used to assist with drafting and structuring report
+sections, generating the \LaTeX{} template, and reviewing written content for
+clarity and consistency. All technical results, model architectures,
+experimental findings and quantitative claims in the body of the report are
+drawn directly from the team's own experimental analysis. The team reviewed
+and verified all AI-assisted drafts for accuracy before inclusion.
+
+\end{document}

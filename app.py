@@ -41,38 +41,39 @@ HORIZON_HOURS = 72
 class T:
     """Tokens. One palette, one type system, one set of spacings."""
 
-    # Colours
-    INK         = '#181613'   # primary text — warm near-black
-    INK_SOFT    = '#5A554F'   # secondary text
-    INK_FAINT   = '#8E867D'   # tertiary text / muted labels
-    LINE        = '#E2DDD5'   # borders + grid
-    LINE_SOFT   = '#EEEAE3'   # subtle dividers
-    PANEL       = '#FBF9F5'   # card / content backgrounds (warm paper)
+    # Colours — crisp Swiss / architectural minimalism. Cool near-white surfaces,
+    # near-black ink, one confident green accent doing the heavy lifting.
+    INK         = '#0E1410'   # primary text, near-true black
+    INK_SOFT    = '#3F4641'   # secondary text
+    INK_FAINT   = '#838983'   # tertiary text / muted labels
+    LINE        = '#D5DAD5'   # borders + grid, slightly more visible than v2
+    LINE_SOFT   = '#E6E9E5'   # subtle dividers
+    PANEL       = '#FAFBF8'   # card / content backgrounds, near-white
     PANEL_RAISED= '#FFFFFF'   # raised surface
-    BG          = '#F2EEE7'   # page background (warm parchment)
-    BG_DEEP     = '#E9E4DB'   # deeper recess for contrast wells
+    BG          = '#F2F3EF'   # page background, very pale cool tint
+    BG_DEEP     = '#E5E7E2'   # deeper recess for contrast wells
 
-    ACCENT      = '#B8521F'   # primary accent (terracotta / soil)
-    ACCENT_DEEP = '#8A3A12'   # accent on press / strong emphasis
-    ACCENT_SOFT = '#F2DFCE'   # accent tint for fills
-    ACCENT_GLOW = 'rgba(184, 82, 31, 0.18)'
+    ACCENT      = '#1F5A2F'   # primary accent, confident deep emerald
+    ACCENT_DEEP = '#143B1F'   # accent on press / strong emphasis
+    ACCENT_SOFT = '#CFDDD0'   # accent tint for fills
+    ACCENT_GLOW = 'rgba(31, 90, 47, 0.20)'
 
-    SIGNAL      = '#1E4856'   # secondary signal (deep teal)
-    SIGNAL_SOFT = '#D6E2E7'
+    SIGNAL      = '#A04D1A'   # secondary signal, burnt copper
+    SIGNAL_SOFT = '#EBD2BB'
 
-    OK          = '#3A6B3A'   # green for "healthy"
-    OK_SOFT     = '#E5EFE2'
-    WARN        = '#B07706'   # amber for "watch"
-    WARN_SOFT   = '#F7ECD2'
-    ALERT       = '#A23B3B'   # red for "drought"
-    ALERT_SOFT  = '#F2DCDC'
+    OK          = '#347039'   # green for "healthy"
+    OK_SOFT     = '#DCE9DA'
+    WARN        = '#A06D04'   # amber for "watch"
+    WARN_SOFT   = '#F2E4C5'
+    ALERT       = '#92322D'   # clay red for "drought"
+    ALERT_SOFT  = '#EBD2CF'
 
-    # Elevation
-    SHADOW_SM   = '0 1px 2px rgba(40, 30, 20, 0.04), 0 1px 1px rgba(40, 30, 20, 0.03)'
-    SHADOW_MD   = '0 4px 14px rgba(40, 30, 20, 0.06), 0 1px 3px rgba(40, 30, 20, 0.04)'
-    SHADOW_LG   = '0 18px 40px rgba(40, 30, 20, 0.08), 0 4px 10px rgba(40, 30, 20, 0.05)'
+    # Elevation. Flatter still — almost no shadow. Architecture, not cards.
+    SHADOW_SM   = '0 1px 0 rgba(14, 20, 16, 0.02)'
+    SHADOW_MD   = '0 1px 0 rgba(14, 20, 16, 0.04), 0 2px 6px rgba(14, 20, 16, 0.03)'
+    SHADOW_LG   = '0 8px 20px rgba(14, 20, 16, 0.05), 0 1px 2px rgba(14, 20, 16, 0.03)'
 
-    # Motion — Emil's strong custom curves (cubic-bezier)
+    # Motion (unchanged)
     EASE_OUT    = 'cubic-bezier(0.23, 1, 0.32, 1)'           # entrances, hovers
     EASE_INOUT  = 'cubic-bezier(0.77, 0, 0.175, 1)'          # on-screen movement
     EASE_DRAWER = 'cubic-bezier(0.32, 0.72, 0, 1)'           # iOS-feel
@@ -80,16 +81,17 @@ class T:
     DUR_BASE    = '200ms'
     DUR_SLOW    = '420ms'
 
-    # Type
+    # Type — all sans, no serif display. IBM Plex Sans handles body and
+    # display, with weight + size doing the hierarchy. IBM Plex Mono for
+    # tabular numerals. Removing the serif is the single biggest "feel"
+    # change from v2.
     FONT = (
-        '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", '
+        '"IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", '
         'Roboto, Helvetica, Arial, sans-serif'
     )
-    FONT_DISPLAY = (
-        '"Fraunces", "Inter", -apple-system, BlinkMacSystemFont, Georgia, serif'
-    )
+    FONT_DISPLAY = FONT  # display is the same sans, with heavier weight
     FONT_MONO = (
-        '"JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace'
+        '"IBM Plex Mono", "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas, monospace'
     )
 
 
@@ -286,7 +288,7 @@ def card(children, padding='28px', lift=True, raised=False):
         style={
             'background': bg,
             'border': f'1px solid {T.LINE}',
-            'borderRadius': '6px',
+            'borderRadius': '1px',
             'padding': padding,
             'height': '100%',
             'boxShadow': T.SHADOW_SM,
@@ -314,7 +316,7 @@ def stat(label, value, sub=None, value_color=None):
         style={
             'background': T.PANEL_RAISED,
             'border': f'1px solid {T.LINE}',
-            'borderRadius': '6px',
+            'borderRadius': '1px',
             'padding': '30px',
             'height': '100%',
             'boxShadow': T.SHADOW_SM,
@@ -354,7 +356,7 @@ def verdict_panel(level, headline, body):
         style={
             'background': bg,
             'borderLeft': f'3px solid {color}',
-            'borderRadius': '6px',
+            'borderRadius': '1px',
             'padding': '24px 28px',
         },
     )
@@ -382,7 +384,7 @@ def _comparison_card(label, value, value_sub, description, value_color):
         style={
             'background': T.PANEL_RAISED,
             'border': f'1px solid {T.LINE}',
-            'borderRadius': '6px',
+            'borderRadius': '1px',
             'padding': '32px',
             'height': '100%',
             'boxShadow': T.SHADOW_SM,
@@ -1074,7 +1076,7 @@ def _home_cta():
                         'fontWeight': 500,
                         'letterSpacing': '0.02em',
                         'cursor': 'pointer',
-                        'borderRadius': '6px',
+                        'borderRadius': '1px',
                         'boxShadow': T.SHADOW_MD,
                     },
                 ),
@@ -1086,7 +1088,7 @@ def _home_cta():
             'marginTop': '120px',
             'background': T.PANEL_RAISED,
             'border': f'1px solid {T.LINE}',
-            'borderRadius': '8px',
+            'borderRadius': '2px',
             'boxShadow': T.SHADOW_SM,
         },
     )
@@ -2208,7 +2210,7 @@ app = Dash(
     __name__,
     external_stylesheets=[
         dbc.themes.BOOTSTRAP,
-        'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500&display=swap',
+        'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap',
     ],
     suppress_callback_exceptions=True,
     title='Drought Warning System',
@@ -2578,7 +2580,7 @@ app.layout = html.Div(
                     'background': T.PANEL,
                     'padding': '80px 88px',
                     'minHeight': '100vh',
-                    'borderRadius': '8px',
+                    'borderRadius': '2px',
                     'boxShadow': T.SHADOW_LG,
                     'border': f'1px solid {T.LINE_SOFT}',
                 },

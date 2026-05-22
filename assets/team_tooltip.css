@@ -11,10 +11,10 @@
     bottom: calc(100% + 12px);
     left: 50%;
     transform: translateX(-50%);
-    background: #181613;
-    color: #FBF9F5;
+    background: #0E1410;
+    color: #FAFBF8;
     padding: 10px 16px;
-    border-radius: 8px;
+    border-radius: 2px;
     white-space: nowrap;
     pointer-events: none;
     z-index: 1000;
@@ -52,5 +52,5 @@
     left: 50%;
     transform: translateX(-50%);
     border: 7px solid transparent;
-    border-top-color: #181613;
+    border-top-color: #0E1410;
 }
