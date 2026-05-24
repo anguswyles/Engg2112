@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SoilSync — 7-day drought warning</title>
+  <style>
+    /* ─── Design tokens ─────────────────────────────────────────── */
+    :root {
+      --bg:          #EFE3CF;
+      --bg-deep:     #E1CFB0;
+      --surface:     #F6EFE3;
+      --card:        #FFFFFF;
+      --card-soft:   #FBF6EC;
+      --ink:         #2A1F15;
+      --ink-soft:    #6B5A48;
+      --ink-faint:   #A89684;
+      --line:        #EADFC9;
+      --line-soft:   #F1E7D2;
+
+      --terracotta:  #C2522E;
+      --terracotta-d:#9C3F1F;
+      --terracotta-s:#F4D9CC;
+
+      --amber:       #D4A24C;
+      --amber-s:     #F7E8C9;
+
+      --leaf:        #7A9461;
+      --leaf-s:      #DDE6CF;
+
+      --shadow-sm: 0 1px 2px rgba(60, 40, 20, 0.06),
+                   0 1px 3px rgba(60, 40, 20, 0.04);
+      --shadow-md: 0 8px 20px rgba(60, 40, 20, 0.08),
+                   0 2px 6px rgba(60, 40, 20, 0.04);
+
+      --radius-sm: 10px;
+      --radius-md: 16px;
+      --radius-lg: 22px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   system-ui, "Helvetica Neue", Arial, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 600px at 20% -10%, #F0E3CB 0%, transparent 60%),
+        radial-gradient(1000px 600px at 110% 110%, #E5D1AE 0%, transparent 55%),
+        linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 100%);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* ─── Page + device frame ───────────────────────────────────── */
+    .page {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 40px 16px 56px;
+    }
+
+    .phone {
+      width: 100%;
+      max-width: 420px;
+      background: var(--surface);
+      border-radius: 36px;
+      box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.04),
+        0 30px 80px rgba(60, 40, 20, 0.22),
+        0 12px 32px rgba(60, 40, 20, 0.10);
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* fake status notch */
+    .notch {
+      height: 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 24px 0;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ink);
+      letter-spacing: 0.02em;
+    }
+    .notch .right { display: flex; gap: 6px; align-items: center; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink); display: inline-block; }
+    .battery {
+      width: 22px; height: 11px; border: 1.4px solid var(--ink); border-radius: 3px;
+      position: relative; display: inline-block;
+    }
+    .battery::after {
+      content: ""; position: absolute; right: -3px; top: 3px;
+      width: 2px; height: 5px; background: var(--ink); border-radius: 1px;
+    }
+    .battery::before {
+      content: ""; position: absolute; inset: 1.5px; width: 70%;
+      background: var(--leaf); border-radius: 1.5px;
+    }
+
+    /* ─── Header ────────────────────────────────────────────────── */
+    header.app-header {
+      padding: 18px 22px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, var(--surface) 0%, var(--card-soft) 100%);
+    }
+    .logo-mark {
+      width: 38px; height: 38px;
+      flex: 0 0 38px;
+      border-radius: 12px;
+      background: var(--ink);
+      display: grid; place-items: center;
+      box-shadow: 0 4px 10px rgba(42, 31, 21, 0.25);
+    }
+    .logo-mark svg { display: block; }
+    .brand-name {
+      font-size: 19px; font-weight: 700; letter-spacing: -0.01em;
+      line-height: 1;
+    }
+    .brand-name em {
+      font-style: normal; color: var(--terracotta); font-weight: 700;
+    }
+    .brand-sub {
+      font-size: 11.5px; color: var(--ink-soft); margin-top: 4px;
+      letter-spacing: 0.04em; text-transform: uppercase; font-weight: 600;
+    }
+
+    /* ─── Main content scroll area ─────────────────────────────── */
+    main.app-main {
+      padding: 18px 18px 28px;
+      display: flex; flex-direction: column; gap: 16px;
+    }
+
+    /* ─── Field selector ───────────────────────────────────────── */
+    .field-selector {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      box-shadow: var(--shadow-sm);
+      display: flex; align-items: center; gap: 12px;
+    }
+    .field-icon {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: var(--leaf-s); color: var(--leaf);
+      display: grid; place-items: center;
+      font-size: 18px; flex: 0 0 36px;
+    }
+    .field-meta { flex: 1 1 auto; min-width: 0; }
+    .field-eyebrow {
+      font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--ink-faint); font-weight: 700;
+    }
+    .field-name {
+      font-size: 15px; font-weight: 600; color: var(--ink); margin-top: 2px;
+      letter-spacing: -0.01em;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .field-select {
+      appearance: none; -webkit-appearance: none;
+      border: 1px solid var(--line);
+      background: var(--card-soft);
+      border-radius: 8px;
+      padding: 6px 26px 6px 10px;
+      font-size: 12.5px; font-weight: 600; color: var(--ink-soft);
+      cursor: pointer;
+      background-image:
+        linear-gradient(45deg, transparent 50%, var(--ink-soft) 50%),
+        linear-gradient(135deg, var(--ink-soft) 50%, transparent 50%);
+      background-position:
+        calc(100% - 14px) 50%,
+        calc(100% - 9px) 50%;
+      background-size: 5px 5px, 5px 5px;
+      background-repeat: no-repeat;
+    }
+
+    /* ─── Hero risk card ───────────────────────────────────────── */
+    .risk-card {
+      border-radius: var(--radius-lg);
+      padding: 22px 22px 20px;
+      color: white;
+      box-shadow: var(--shadow-md);
+      position: relative;
+      overflow: hidden;
+      transition: background 280ms ease;
+    }
+    .risk-card[data-level="high"] {
+      background:
+        radial-gradient(120% 80% at 100% 0%, #D8643E 0%, transparent 55%),
+        linear-gradient(160deg, #C2522E 0%, #8B331A 100%);
+    }
+    .risk-card[data-level="medium"] {
+      background:
+        radial-gradient(120% 80% at 100% 0%, #E3B664 0%, transparent 55%),
+        linear-gradient(160deg, #D4A24C 0%, #9E732A 100%);
+    }
+    .risk-card[data-level="low"] {
+      background:
+        radial-gradient(120% 80% at 100% 0%, #97B07E 0%, transparent 55%),
+        linear-gradient(160deg, #7A9461 0%, #506B40 100%);
+    }
+    .risk-card::after {
+      content: ""; position: absolute; inset: 0;
+      background: radial-gradient(60% 90% at 90% 110%, rgba(255,255,255,0.10), transparent 60%);
+      pointer-events: none;
+    }
+
+    .risk-eyebrow {
+      font-size: 10.5px; font-weight: 700; letter-spacing: 0.16em;
+      text-transform: uppercase; opacity: 0.85;
+    }
+    .risk-level {
+      font-size: 54px; font-weight: 700; letter-spacing: -0.03em;
+      line-height: 1; margin-top: 10px;
+    }
+    .risk-tag {
+      display: inline-flex; align-items: center; gap: 6px;
+      margin-top: 8px;
+      background: rgba(255,255,255,0.16);
+      backdrop-filter: blur(2px);
+      padding: 5px 10px; border-radius: 999px;
+      font-size: 11.5px; font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .risk-tag .pulse {
+      width: 7px; height: 7px; border-radius: 50%; background: #fff;
+      box-shadow: 0 0 0 0 rgba(255,255,255, 0.7);
+      animation: pulse 1.8s infinite;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(255,255,255, 0.55); }
+      70% { box-shadow: 0 0 0 8px rgba(255,255,255, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(255,255,255, 0); }
+    }
+
+    /* segmented indicator */
+    .risk-segments {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+      margin-top: 18px;
+    }
+    .seg {
+      height: 6px; border-radius: 4px;
+      background: rgba(255,255,255,0.22);
+    }
+    .seg.fill { background: rgba(255,255,255,0.95); }
+    .seg-labels {
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px; margin-top: 8px;
+      font-size: 10.5px; letter-spacing: 0.08em;
+      text-transform: uppercase; font-weight: 600; opacity: 0.85;
+    }
+    .seg-labels .active { opacity: 1; color: #fff; }
+
+    .risk-onset {
+      margin-top: 18px; padding-top: 16px;
+      border-top: 1px solid rgba(255,255,255, 0.18);
+      display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    }
+    .risk-onset .small {
+      font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;
+      opacity: 0.85; font-weight: 700;
+    }
+    .risk-onset .big {
+      font-size: 19px; font-weight: 700; letter-spacing: -0.01em;
+      margin-top: 4px;
+    }
+
+    .risk-action {
+      margin-top: 16px;
+      background: rgba(0,0,0,0.18);
+      border-radius: 12px;
+      padding: 12px 14px;
+      display: flex; gap: 12px; align-items: flex-start;
+    }
+    .risk-action .icon {
+      width: 28px; height: 28px; border-radius: 8px; flex: 0 0 28px;
+      background: rgba(255,255,255, 0.95);
+      color: var(--terracotta);
+      display: grid; place-items: center;
+      font-size: 16px; font-weight: 700;
+    }
+    .risk-action .text {
+      font-size: 13.5px; line-height: 1.45; font-weight: 500;
+    }
+    .risk-action .text strong { font-weight: 700; }
+
+    /* ─── Stat grid ───────────────────────────────────────────── */
+    .stat-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    }
+    .stat {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 13px 14px;
+      box-shadow: var(--shadow-sm);
+    }
+    .stat-label {
+      font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--ink-faint); font-weight: 700;
+    }
+    .stat-value {
+      font-size: 17px; font-weight: 700; color: var(--ink);
+      margin-top: 6px; letter-spacing: -0.01em;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .stat-sub {
+      font-size: 11.5px; color: var(--ink-soft); margin-top: 4px;
+    }
+    .trend-arrow {
+      width: 20px; height: 20px; border-radius: 6px;
+      background: var(--terracotta-s); color: var(--terracotta);
+      display: inline-grid; place-items: center;
+      font-size: 12px; font-weight: 700;
+    }
+    .pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 11.5px; font-weight: 700;
+      padding: 3px 8px; border-radius: 999px;
+      letter-spacing: 0.02em;
+    }
+    .pill.watch  { background: var(--amber-s);      color: #8B5E13; }
+    .pill.normal { background: var(--leaf-s);       color: #46622E; }
+    .pill.alert  { background: var(--terracotta-s); color: var(--terracotta-d); }
+
+    /* ─── Generic section card ───────────────────────────────── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 18px;
+      box-shadow: var(--shadow-sm);
+    }
+    .card h3 {
+      font-size: 14px; font-weight: 700; letter-spacing: -0.005em;
+      margin: 0 0 4px; color: var(--ink);
+    }
+    .card .h3-sub {
+      font-size: 11.5px; color: var(--ink-faint);
+      letter-spacing: 0.04em;
+    }
+
+    /* ─── Chart ──────────────────────────────────────────────── */
+    .chart {
+      margin-top: 14px;
+      position: relative;
+    }
+    .chart svg { display: block; width: 100%; height: auto; }
+    .chart-legend {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-top: 10px;
+      font-size: 11px; color: var(--ink-soft);
+    }
+    .legend-key {
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .legend-swatch {
+      width: 10px; height: 3px; border-radius: 2px; background: var(--terracotta);
+    }
+    .legend-swatch.dashed {
+      background: transparent;
+      border-top: 2px dashed var(--terracotta-d);
+    }
+
+    /* ─── Sensors ────────────────────────────────────────────── */
+    .sensor-list {
+      margin-top: 14px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .sensor {
+      display: grid;
+      grid-template-columns: 38px 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px;
+      background: var(--card-soft);
+      border: 1px solid var(--line-soft);
+      border-radius: 14px;
+    }
+    .sensor .glyph {
+      width: 38px; height: 38px; border-radius: 10px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      display: grid; place-items: center;
+      font-size: 18px;
+    }
+    .sensor-name {
+      font-size: 13.5px; font-weight: 600; color: var(--ink); letter-spacing: -0.005em;
+    }
+    .sensor-depth {
+      font-size: 11.5px; color: var(--ink-soft); margin-top: 2px;
+    }
+    .sensor-reading {
+      text-align: right;
+    }
+    .sensor-reading .v {
+      font-size: 15px; font-weight: 700; color: var(--ink);
+      letter-spacing: -0.01em;
+    }
+    .sensor-reading .u {
+      font-size: 10.5px; color: var(--ink-faint); margin-top: 2px;
+      font-weight: 500;
+    }
+    .sensor-foot {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-top: 12px;
+      font-size: 11.5px; color: var(--ink-soft);
+    }
+    .ok-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--leaf);
+      display: inline-block; margin-right: 6px; vertical-align: middle;
+      box-shadow: 0 0 0 3px var(--leaf-s);
+    }
+
+    /* ─── Alert preview / SMS bubble ─────────────────────────── */
+    .alert-channel {
+      margin-top: 12px;
+      font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--ink-faint); font-weight: 700;
+      display: flex; gap: 8px; align-items: center;
+    }
+    .channel-pill {
+      background: var(--leaf-s); color: #46622E;
+      padding: 3px 8px; border-radius: 999px; font-size: 10.5px;
+      letter-spacing: 0.06em;
+    }
+    .sms-bubble {
+      margin-top: 12px;
+      background: linear-gradient(180deg, #FBF6EC 0%, #F4ECD9 100%);
+      border: 1px solid var(--line);
+      border-radius: 18px 18px 18px 4px;
+      padding: 14px 16px;
+      font-size: 13.5px; line-height: 1.5; color: var(--ink);
+      position: relative;
+      box-shadow: var(--shadow-sm);
+    }
+    .sms-bubble::before {
+      content: "";
+      position: absolute; left: -1px; bottom: -1px;
+      width: 12px; height: 14px;
+      background: linear-gradient(180deg, #FBF6EC 0%, #F4ECD9 100%);
+      border-left: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      border-bottom-left-radius: 2px;
+      transform: skewX(-20deg);
+    }
+    .sms-meta {
+      display: flex; justify-content: space-between;
+      font-size: 11px; color: var(--ink-faint);
+      margin-top: 8px; letter-spacing: 0.02em;
+    }
+
+    /* ─── Kit summary ────────────────────────────────────────── */
+    .kit {
+      background:
+        linear-gradient(180deg, var(--card-soft), var(--card));
+      border: 1px dashed var(--line);
+    }
+    .kit-items {
+      margin-top: 12px;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    }
+    .kit-item {
+      display: flex; gap: 10px; align-items: center;
+      padding: 10px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      font-size: 12.5px; font-weight: 500; color: var(--ink);
+    }
+    .kit-item .ki {
+      width: 28px; height: 28px; flex: 0 0 28px;
+      border-radius: 8px;
+      background: var(--terracotta-s); color: var(--terracotta-d);
+      display: grid; place-items: center;
+      font-size: 15px;
+    }
+    .kit-item .name { line-height: 1.25; }
+    .kit-item .sub  { font-size: 10.5px; color: var(--ink-faint); font-weight: 500; margin-top: 2px; letter-spacing: 0.02em; }
+
+    /* ─── Technical note ─────────────────────────────────────── */
+    .tech-note {
+      font-size: 11.5px; line-height: 1.55; color: var(--ink-soft);
+      padding: 12px 14px;
+      background: var(--card-soft);
+      border: 1px solid var(--line-soft);
+      border-radius: 12px;
+      display: flex; gap: 10px; align-items: flex-start;
+    }
+    .tech-note .badge {
+      font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase;
+      background: var(--ink); color: var(--surface);
+      padding: 3px 7px; border-radius: 6px; font-weight: 700;
+      flex: 0 0 auto;
+    }
+
+    /* ─── Footer ─────────────────────────────────────────────── */
+    .app-footer {
+      text-align: center;
+      font-size: 11px; color: var(--ink-faint);
+      letter-spacing: 0.1em; text-transform: uppercase;
+      padding: 8px 0 0;
+    }
+    .app-footer strong { color: var(--ink-soft); font-weight: 700; }
+
+    /* ─── Reveal animation ──────────────────────────────────── */
+    main.app-main > * {
+      opacity: 0;
+      transform: translateY(8px);
+      animation: rise 480ms cubic-bezier(.2,.7,.2,1) forwards;
+    }
+    main.app-main > *:nth-child(1) { animation-delay: 40ms; }
+    main.app-main > *:nth-child(2) { animation-delay: 100ms; }
+    main.app-main > *:nth-child(3) { animation-delay: 160ms; }
+    main.app-main > *:nth-child(4) { animation-delay: 220ms; }
+    main.app-main > *:nth-child(5) { animation-delay: 280ms; }
+    main.app-main > *:nth-child(6) { animation-delay: 340ms; }
+    main.app-main > *:nth-child(7) { animation-delay: 400ms; }
+    main.app-main > *:nth-child(8) { animation-delay: 460ms; }
+    main.app-main > *:nth-child(9) { animation-delay: 520ms; }
+    @keyframes rise {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ─── Mobile: no device frame ───────────────────────────── */
+    @media (max-width: 480px) {
+      .page { padding: 0; }
+      .phone {
+        max-width: 100%;
+        border-radius: 0;
+        box-shadow: none;
+        min-height: 100vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="phone" role="application" aria-label="SoilSync drought warning dashboard">
+
+      <!-- Fake mobile status bar -->
+      <div class="notch" aria-hidden="true">
+        <span>9:42</span>
+        <div class="right">
+          <span>4G</span>
+          <span class="dot" style="opacity:.55"></span>
+          <span class="battery"></span>
+        </div>
+      </div>
+
+      <!-- Header -->
+      <header class="app-header">
+        <div class="logo-mark" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <path d="M12 3.5 C 8.5 9.5, 7 12.5, 7 15 a5 5 0 0 0 10 0 c0 -2.5 -1.5 -5.5 -5 -11.5 Z"
+                  fill="#C2522E"/>
+            <path d="M12 14.5 c -1.4 0 -2.5 -1 -2.5 -2.5"
+                  stroke="#FBE7DC" stroke-width="1.2" stroke-linecap="round" fill="none"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-name">Soil<em>Sync</em></div>
+          <div class="brand-sub">7-day drought warning</div>
+        </div>
+      </header>
+
+      <!-- Main scroll area -->
+      <main class="app-main">
+
+        <!-- Field selector -->
+        <section class="field-selector" aria-label="Field selector">
+          <div class="field-icon" aria-hidden="true">🌽</div>
+          <div class="field-meta">
+            <div class="field-eyebrow">Current field</div>
+            <div class="field-name" id="fieldName">Field 1 — Maize Plot</div>
+          </div>
+          <select class="field-select" id="fieldSelect" aria-label="Select field">
+            <option value="1">Field 1</option>
+            <option value="2">Field 2</option>
+            <option value="3">Field 3</option>
+          </select>
+        </section>
+
+        <!-- Hero risk card -->
+        <section class="risk-card" id="riskCard" data-level="high" aria-live="polite">
+          <div class="risk-eyebrow">7-day drought risk</div>
+          <div class="risk-level" id="riskLevel">High</div>
+
+          <div class="risk-tag" id="riskTag">
+            <span class="pulse" aria-hidden="true"></span>
+            <span id="riskTagText">Action recommended</span>
+          </div>
+
+          <div class="risk-segments" aria-hidden="true">
+            <div class="seg" id="segLow"></div>
+            <div class="seg" id="segMed"></div>
+            <div class="seg" id="segHigh"></div>
+          </div>
+          <div class="seg-labels" aria-hidden="true">
+            <span id="lblLow">Low</span>
+            <span id="lblMed">Medium</span>
+            <span id="lblHigh">High</span>
+          </div>
+
+          <div class="risk-onset">
+            <div>
+              <div class="small">Expected onset window</div>
+              <div class="big" id="onsetWindow">6–8 days</div>
+            </div>
+            <div style="text-align:right">
+              <div class="small">Confidence</div>
+              <div class="big" id="confLevel">High</div>
+            </div>
+          </div>
+
+          <div class="risk-action">
+            <div class="icon" aria-hidden="true">💧</div>
+            <div class="text" id="actionText">
+              <strong>Suggested action:</strong> Prioritise irrigation if water is available.
+            </div>
+          </div>
+        </section>
+
+        <!-- Quick stats -->
+        <section class="stat-grid" aria-label="Quick stats">
+          <div class="stat">
+            <div class="stat-label">Field status</div>
+            <div class="stat-value">
+              <span class="pill watch" id="statusPill">● Watch</span>
+            </div>
+            <div class="stat-sub" id="statusSub">Conditions worth monitoring</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Moisture trend</div>
+            <div class="stat-value">
+              <span id="trendLabel">Declining</span>
+              <span class="trend-arrow" id="trendArrow" aria-hidden="true">↓</span>
+            </div>
+            <div class="stat-sub">Past 7 days</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Last sensor update</div>
+            <div class="stat-value">2h ago</div>
+            <div class="stat-sub">Auto-synced over cellular</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Probes online</div>
+            <div class="stat-value">2 / 2</div>
+            <div class="stat-sub">Solar node • healthy</div>
+          </div>
+        </section>
+
+        <!-- Moisture trend chart -->
+        <section class="card">
+          <h3>Soil moisture — last 7 days</h3>
+          <div class="h3-sub">Shallow probe · 10–15 cm</div>
+
+          <div class="chart" aria-label="Moisture trend chart">
+            <svg viewBox="0 0 320 160" preserveAspectRatio="xMidYMid meet" role="img">
+              <!-- gridlines -->
+              <g stroke="#EADFC9" stroke-width="1">
+                <line x1="20"  y1="35"  x2="310" y2="35"  />
+                <line x1="20"  y1="70"  x2="310" y2="70"  />
+                <line x1="20"  y1="105" x2="310" y2="105" />
+                <line x1="20"  y1="140" x2="310" y2="140" />
+              </g>
+
+              <!-- y axis labels -->
+              <g font-size="9" font-family="inherit" fill="#A89684" text-anchor="end">
+                <text x="16" y="38">0.45</text>
+                <text x="16" y="73">0.40</text>
+                <text x="16" y="108">0.35</text>
+                <text x="16" y="143">0.30</text>
+              </g>
+
+              <!-- area fill -->
+              <defs>
+                <linearGradient id="moistFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%"  stop-color="#C2522E" stop-opacity="0.28"/>
+                  <stop offset="100%" stop-color="#C2522E" stop-opacity="0.02"/>
+                </linearGradient>
+              </defs>
+              <path d="M 28 49 L 70 56 L 112 63 L 154 77 L 196 84 L 238 98 L 296 119
+                       L 296 140 L 28 140 Z"
+                    fill="url(#moistFill)"/>
+
+              <!-- threshold line -->
+              <line x1="20" y1="140" x2="310" y2="140"
+                    stroke="#9C3F1F" stroke-width="1.4"
+                    stroke-dasharray="4 4" opacity="0.85"/>
+              <text x="310" y="135" font-size="9" font-family="inherit"
+                    fill="#9C3F1F" text-anchor="end">Drought threshold (0.30)</text>
+
+              <!-- moisture line -->
+              <path d="M 28 49 L 70 56 L 112 63 L 154 77 L 196 84 L 238 98 L 296 119"
+                    fill="none" stroke="#C2522E" stroke-width="2.4"
+                    stroke-linejoin="round" stroke-linecap="round"/>
+
+              <!-- points -->
+              <g fill="#C2522E" stroke="#FBF6EC" stroke-width="2">
+                <circle cx="28"  cy="49"  r="3.2"/>
+                <circle cx="70"  cy="56"  r="3.2"/>
+                <circle cx="112" cy="63"  r="3.2"/>
+                <circle cx="154" cy="77"  r="3.2"/>
+                <circle cx="196" cy="84"  r="3.2"/>
+                <circle cx="238" cy="98"  r="3.2"/>
+                <circle cx="296" cy="119" r="4.5"/>
+              </g>
+
+              <!-- today callout -->
+              <g font-family="inherit">
+                <rect x="252" y="83" width="56" height="22" rx="6"
+                      fill="#FBF6EC" stroke="#EADFC9"/>
+                <text x="280" y="98" font-size="11" font-weight="700"
+                      fill="#2A1F15" text-anchor="middle">Today 0.32</text>
+              </g>
+
+              <!-- x axis labels -->
+              <g font-size="9.5" font-family="inherit" fill="#6B5A48" text-anchor="middle">
+                <text x="28"  y="155">D-6</text>
+                <text x="70"  y="155">D-5</text>
+                <text x="112" y="155">D-4</text>
+                <text x="154" y="155">D-3</text>
+                <text x="196" y="155">D-2</text>
+                <text x="238" y="155">D-1</text>
+                <text x="296" y="155">Today</text>
+              </g>
+            </svg>
+          </div>
+
+          <div class="chart-legend">
+            <span class="legend-key">
+              <span class="legend-swatch"></span> Soil moisture (m³/m³)
+            </span>
+            <span class="legend-key">
+              <span class="legend-swatch dashed"></span> Drought threshold
+            </span>
+          </div>
+        </section>
+
+        <!-- Sensor health -->
+        <section class="card">
+          <h3>Sensor health</h3>
+          <div class="h3-sub">Two probes per field node</div>
+
+          <div class="sensor-list">
+            <div class="sensor">
+              <div class="glyph" aria-hidden="true">🌱</div>
+              <div>
+                <div class="sensor-name">Shallow probe</div>
+                <div class="sensor-depth">Buried at 10–15 cm</div>
+              </div>
+              <div class="sensor-reading">
+                <div class="v">0.32</div>
+                <div class="u">m³/m³</div>
+              </div>
+            </div>
+            <div class="sensor">
+              <div class="glyph" aria-hidden="true">🪴</div>
+              <div>
+                <div class="sensor-name">Deep probe</div>
+                <div class="sensor-depth">Buried at 25–30 cm</div>
+              </div>
+              <div class="sensor-reading">
+                <div class="v">0.36</div>
+                <div class="u">m³/m³</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sensor-foot">
+            <span><span class="ok-dot"></span>Both probes online · solar node 92%</span>
+            <span>Last sync: 2h ago</span>
+          </div>
+        </section>
+
+        <!-- Alert preview -->
+        <section class="card">
+          <h3>Alert preview</h3>
+          <div class="h3-sub">What the farmer receives on their phone</div>
+
+          <div class="alert-channel">
+            <span>Channel:</span>
+            <span class="channel-pill">SMS</span>
+            <span class="channel-pill" style="background:#D9E9D5;color:#365B2E;">WhatsApp</span>
+          </div>
+
+          <div class="sms-bubble" id="alertBubble">
+            High drought risk for <strong>Field 1</strong>. Drought conditions are
+            likely within <strong>6–8 days</strong>. Prioritise irrigation if water
+            is available.
+          </div>
+          <div class="sms-meta">
+            <span>From: SoilSync</span>
+            <span>Delivered · just now</span>
+          </div>
+        </section>
+
+        <!-- Kit summary -->
+        <section class="card kit">
+          <h3>Starter kit</h3>
+          <div class="h3-sub">Everything in the SoilSync deployment box</div>
+
+          <div class="kit-items">
+            <div class="kit-item">
+              <div class="ki" aria-hidden="true">🌱</div>
+              <div>
+                <div class="name">2 × soil moisture probes</div>
+                <div class="sub">Capacitive · shallow + deep</div>
+              </div>
+            </div>
+            <div class="kit-item">
+              <div class="ki" aria-hidden="true">☀️</div>
+              <div>
+                <div class="name">Solar field node</div>
+                <div class="sub">Low-power microcontroller</div>
+              </div>
+            </div>
+            <div class="kit-item">
+              <div class="ki" aria-hidden="true">🔋</div>
+              <div>
+                <div class="name">Rechargeable battery</div>
+                <div class="sub">Multi-day backup</div>
+              </div>
+            </div>
+            <div class="kit-item">
+              <div class="ki" aria-hidden="true">📡</div>
+              <div>
+                <div class="name">Cellular / LoRaWAN</div>
+                <div class="sub">Whichever is in range</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Technical note -->
+        <section class="tech-note">
+          <span class="badge">Note</span>
+          <span>
+            Risk level is generated from soil moisture history and weather forecast
+            inputs. SoilSync is a university research prototype, not a deployed
+            service.
+          </span>
+        </section>
+
+        <!-- Footer -->
+        <div class="app-footer">
+          <strong>SoilSync</strong> &nbsp;·&nbsp; ENGG2112 prototype &nbsp;·&nbsp; Mock-up
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+<script>
+  // Field mock states — purely visual, no backend.
+  const FIELDS = {
+    "1": {
+      name: "Field 1 — Maize Plot",
+      crop: "🌽",
+      level: "high",
+      levelLabel: "High",
+      onset: "6–8 days",
+      confidence: "High",
+      status: { pill: "Watch", className: "watch", sub: "Conditions worth monitoring" },
+      trend: { label: "Declining", arrow: "↓", danger: true },
+      action: "Prioritise irrigation if water is available.",
+      tag: "Action recommended",
+      sms: 'High drought risk for <strong>Field 1</strong>. Drought conditions are likely within <strong>6–8 days</strong>. Prioritise irrigation if water is available.'
+    },
+    "2": {
+      name: "Field 2 — Bean Plot",
+      crop: "🫘",
+      level: "medium",
+      levelLabel: "Medium",
+      onset: "9–12 days",
+      confidence: "Medium",
+      status: { pill: "Monitor", className: "watch", sub: "Slow drying — keep watching" },
+      trend: { label: "Slow decline", arrow: "↘", danger: true },
+      action: "Plan irrigation for later this week if rain does not come.",
+      tag: "Monitor closely",
+      sms: 'Medium drought risk for <strong>Field 2</strong>. Drought conditions are possible in <strong>9–12 days</strong>. Plan irrigation if rain does not come.'
+    },
+    "3": {
+      name: "Field 3 — Sorghum Plot",
+      crop: "🌾",
+      level: "low",
+      levelLabel: "Low",
+      onset: "More than 14 days",
+      confidence: "High",
+      status: { pill: "Normal", className: "normal", sub: "Soil moisture is healthy" },
+      trend: { label: "Stable", arrow: "→", danger: false },
+      action: "No action needed — keep regular checks.",
+      tag: "No action needed",
+      sms: 'Low drought risk for <strong>Field 3</strong>. Conditions are healthy. No action needed.'
+    }
+  };
+
+  const $ = (id) => document.getElementById(id);
+
+  function applyField(id) {
+    const f = FIELDS[id];
+    if (!f) return;
+
+    // header
+    $("fieldName").textContent = f.name;
+    document.querySelector(".field-icon").textContent = f.crop;
+
+    // risk card
+    const card = $("riskCard");
+    card.setAttribute("data-level", f.level);
+    $("riskLevel").textContent = f.levelLabel;
+    $("riskTagText").textContent = f.tag;
+    $("onsetWindow").textContent = f.onset;
+    $("confLevel").textContent = f.confidence;
+
+    // suggested action
+    $("actionText").innerHTML =
+      "<strong>Suggested action:</strong> " + f.action;
+
+    // segmented indicator
+    const segs = { low: $("segLow"), medium: $("segMed"), high: $("segHigh") };
+    Object.values(segs).forEach(el => el.classList.remove("fill"));
+    if (f.level === "low")    segs.low.classList.add("fill");
+    if (f.level === "medium") { segs.low.classList.add("fill"); segs.medium.classList.add("fill"); }
+    if (f.level === "high")   { segs.low.classList.add("fill"); segs.medium.classList.add("fill"); segs.high.classList.add("fill"); }
+
+    // status pill
+    const pill = $("statusPill");
+    pill.className = "pill " + f.status.className;
+    pill.textContent = "● " + f.status.pill;
+    $("statusSub").textContent = f.status.sub;
+
+    // trend
+    $("trendLabel").textContent = f.trend.label;
+    const arrow = $("trendArrow");
+    arrow.textContent = f.trend.arrow;
+    arrow.style.background = f.trend.danger ? "var(--terracotta-s)" : "var(--leaf-s)";
+    arrow.style.color      = f.trend.danger ? "var(--terracotta)"   : "var(--leaf)";
+
+    // alert bubble
+    $("alertBubble").innerHTML = f.sms;
+  }
+
+  document.getElementById("fieldSelect")
+    .addEventListener("change", (e) => applyField(e.target.value));
+
+  // Initialise Field 1 visuals (segments etc.)
+  applyField("1");
+</script>
+</body>
+</html>
