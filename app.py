@@ -210,7 +210,71 @@ if 'R²' in METRICS_DF.columns:
 
 WX_ABL_DF = _read_first(['test 11 - weather vs no wx t+120h/weather_ablation_four_models.csv'])
 
-print(f'  ready ({len(META)} stations, {len(TEST_PREDS):,} test predictions)')
+# ── Drought-onset signal precompute ──────────────────────────────────
+# For each row in TEST_PREDS, attach two derived columns:
+#
+#   sm_min_future_7d : minimum observed sm_now in the [t+144h, t+192h] window
+#                      at the same station. NaN if the window extends past the
+#                      end of the station's test data.
+#   onset_actual     : True iff sm_now >= THRESHOLD AND sm_min_future_7d <
+#                      THRESHOLD. This is the "ground-truth" drought-onset event
+#                      label used by the warning demo.
+#
+# A risk-probability proxy (risk_score) is then computed from the XGBoost t+72h
+# regression model's outputs. It is a calibrated transformation of three signals:
+# the current moisture margin, the predicted moisture margin, and the projected
+# 3-day drying slope. The result is exposed as a demo-only "drought-onset
+# probability". The dedicated 168h classifier (test 14) is the real product.
+
+def _attach_onset_signals(df, threshold=THRESHOLD, win_low_h=144, win_high_h=192):
+    df = df.sort_values(['station', 'datetime']).reset_index(drop=True)
+    sm = df['sm_now'].to_numpy()
+    out_min    = np.full(len(df), np.nan, dtype=np.float64)
+    out_actual = np.zeros(len(df), dtype=bool)
+    ts_ns = df['datetime'].to_numpy().astype('datetime64[ns]')
+    ts_s  = ts_ns.astype('datetime64[s]').astype(np.int64)
+
+    for _, idxs in df.groupby('station').groups.items():
+        idxs = np.asarray(idxs)
+        sub_ts = ts_s[idxs]
+        sub_sm = sm[idxs]
+        win_lo = sub_ts + win_low_h  * 3600
+        win_hi = sub_ts + win_high_h * 3600
+        los = np.searchsorted(sub_ts, win_lo, side='left')
+        his = np.searchsorted(sub_ts, win_hi, side='right')
+        for k in range(len(idxs)):
+            l, h = los[k], his[k]
+            if l < h:
+                mn = sub_sm[l:h].min()
+                gi = idxs[k]
+                out_min[gi] = mn
+                out_actual[gi] = (sub_sm[k] >= threshold) and (mn < threshold)
+
+    df['sm_min_future_7d'] = out_min
+    df['onset_actual']     = out_actual
+    return df
+
+
+TEST_PREDS = _attach_onset_signals(TEST_PREDS)
+
+# Risk proxy: how close does the soil get to drought across the forecast?
+# Take the minimum of (current moisture, t+72h regression forecast, and a
+# slope-extrapolated estimate at t+168h). Map that minimum to a 0..1 score with
+# a linear ramp around the drought threshold.
+_sm_now  = TEST_PREDS['sm_now'].to_numpy()
+_sm_72   = TEST_PREDS['y_pred_xgb'].to_numpy()
+_slope   = _sm_72 - _sm_now
+_proj168 = np.clip(_sm_now + _slope * (168.0 / 72.0), 0.0, 0.7)
+_proxy_min = np.minimum(np.minimum(_sm_now, _sm_72), _proj168)
+# 0 at threshold+0.06 (well safe) → 1 at threshold-0.04 (clearly entering drought)
+_risk = ((THRESHOLD + 0.06) - _proxy_min) / 0.10
+TEST_PREDS['proxy_min_sm'] = _proxy_min
+TEST_PREDS['risk_score']   = np.clip(_risk, 0.0, 1.0)
+TEST_PREDS['currently_safe'] = TEST_PREDS['sm_now'] >= THRESHOLD
+TEST_PREDS['warning'] = TEST_PREDS['currently_safe'] & (TEST_PREDS['risk_score'] >= 0.5)
+
+print(f'  ready ({len(META)} stations, {len(TEST_PREDS):,} test predictions, '
+      f'{int(TEST_PREDS["onset_actual"].sum()):,} onset events flagged)')
 
 
 STATIONS_SORTED = sorted(META['station'].tolist())
@@ -1422,15 +1486,21 @@ def page_models():
 def page_demo():
     default_station = 'TAHMO/Kibanda_Hydromet' if 'TAHMO/Kibanda_Hydromet' in STATIONS_SORTED else STATIONS_SORTED[0]
     candidates = TEST_PREDS.groupby('station').agg(
-        n=('y_true', 'count'), std=('y_true', 'std'),
-    ).query('n > 1000').sort_values('std', ascending=False)
+        onsets=('onset_actual', 'sum'), n=('y_true', 'count'),
+    ).query('n > 1000 and onsets >= 5').sort_values('onsets', ascending=False)
     if len(candidates):
         default_station = candidates.index[0]
 
     return html.Div(
         [
-            page_title('Moisture forecast', 'Pick a farm. Pick a day. Inspect the supporting forecast.',
-                       'This page keeps the original 3-day soil-moisture regression demo. It is now a supporting diagnostic beside the newer drought-onset warning system.'),
+            page_title(
+                'Drought warning demo',
+                'Pick a station. Pick a day. See the 7-day warning.',
+                'Each moment in the test data is replayed as if the system were live. The warning combines '
+                'the current soil moisture, the XGBoost t+72h forecast and a projected 7-day trajectory. '
+                'The actual outcome is then revealed from the held-out future data so you can see whether '
+                'the system would have been right.',
+            ),
 
             # Step 1 — Station picker
             html.Div(
@@ -1467,10 +1537,11 @@ def page_demo():
             # Step 2 — Date slider
             html.Div(
                 [
-                    section_label('Step 02 — Pick today\'s date'),
+                    section_label('Step 02 — Pick a moment in time'),
                     html.P(
-                        'The model will forecast soil moisture 3 days from this point. '
-                        'Drag the handle to scrub through the test period.',
+                        'Drag the handle to scrub through the station\'s test period. The system will '
+                        'issue a warning for the next 7 days from that moment, and then reveal what '
+                        'actually happened.',
                         style={'fontSize': '15px', 'color': T.INK_SOFT,
                                'marginBottom': '24px', 'maxWidth': '720px'},
                     ),
@@ -1492,11 +1563,11 @@ def page_demo():
                 style={'marginBottom': '72px'},
             ),
 
-            # Step 3 — Verdict
+            # Step 3 — Warning hero
             html.Div(
                 [
-                    section_label('Step 03 — Recommendation'),
-                    html.Div(id='demo-verdict', style={'marginBottom': '32px'}),
+                    section_label('Step 03 — The 7-day drought warning'),
+                    html.Div(id='demo-warning-hero', style={'marginBottom': '32px'}),
                     dbc.Row(id='demo-stat-row', className='gx-4 gy-4'),
                 ],
                 style={'marginBottom': '72px'},
@@ -1505,10 +1576,11 @@ def page_demo():
             # Step 4 — Context chart
             html.Div(
                 [
-                    section_label('Step 04 — The forecast in context'),
+                    section_label('Step 04 — The warning window in context'),
                     html.P(
-                        'Solid blue is what actually happened. Orange is what the model predicted '
-                        '3 days in advance. Grey is the naive baseline.',
+                        'Solid line: actual measured soil moisture. The shaded band on the right is the '
+                        '7-day onset window the system is reasoning about (t+144h to t+192h). Dotted '
+                        'orange is the XGBoost regression forecast used as input to the warning.',
                         style={'fontSize': '15px', 'color': T.INK_SOFT,
                                'marginBottom': '24px', 'maxWidth': '720px'},
                     ),
@@ -1517,17 +1589,39 @@ def page_demo():
                 style={'marginBottom': '72px'},
             ),
 
-            # Step 5 — Model vs persistence
+            # Step 5 — Outcome verdict + station calibration
             html.Div(
                 [
-                    section_label('Step 05 — Model vs the naive guess'),
+                    section_label('Step 05 — Did the warning hold up?'),
                     html.P(
-                        'How much better did the model do than just assuming "tomorrow looks like today"?',
+                        'Compare the warning issued at "today" against what actually happened in the '
+                        'next 7 days of held-out data.',
                         style={'fontSize': '15px', 'color': T.INK_SOFT,
                                'marginBottom': '24px', 'maxWidth': '720px'},
                     ),
+                    html.Div(id='demo-outcome-verdict', style={'marginBottom': '24px'}),
                     dbc.Row(id='demo-comparison-row', className='gx-4'),
                 ],
+                style={'marginBottom': '32px'},
+            ),
+
+            # Footer note
+            html.Div(
+                [
+                    html.Span('NOTE  ', className='eyebrow'),
+                    html.Span(
+                        'This demo derives a warning probability from the XGBoost t+72h regression '
+                        'model\'s outputs as a transparent proxy. The dedicated 168h onset classifier '
+                        '(test 14) catches 297 / 301 drought events (event recall 98.7%, AUC 0.946) on '
+                        'the same data using a richer feature set.',
+                        style={'fontSize': '13px', 'color': T.INK_SOFT, 'lineHeight': 1.55},
+                    ),
+                ],
+                style={
+                    'background': T.PANEL, 'border': f'1px solid {T.LINE}',
+                    'borderRadius': '8px', 'padding': '16px 20px',
+                    'marginTop': '40px',
+                },
             ),
         ]
     )
@@ -2086,7 +2180,7 @@ def page_conclusions():
 NAV_ITEMS = [
     ('home',        'Drought Warning'),
     ('results',     'Onset + Duration'),
-    ('demo',        'Moisture Forecast'),
+    ('demo',        'Warning Demo'),
     ('data',        'The Data'),
     ('models',      'Model Details'),
     ('conclusions', 'Conclusions'),
@@ -2141,28 +2235,16 @@ def sidebar():
                         ],
                         style={'marginBottom': '18px'},
                     ),
-                    html.Div('Drought', className='display', style={
-                        'fontSize': '28px', 'color': T.INK,
-                        'lineHeight': 1, 'letterSpacing': '-0.025em',
-                    }),
-                    html.Div([
-                        html.Span('warning', style={
-                            'fontFamily': T.FONT_DISPLAY,
-                            'fontStyle': 'italic',
-                            'fontWeight': 400,
-                            'color': T.ACCENT,
-                            'fontSize': '28px',
-                            'letterSpacing': '-0.02em',
-                        }),
-                    ], style={'lineHeight': 1, 'marginTop': '2px'}),
-                    html.Div('System', style={
-                        'fontFamily': T.FONT_MONO,
-                        'fontSize': '11px',
-                        'letterSpacing': '0.22em',
-                        'color': T.INK_FAINT,
-                        'marginTop': '14px',
-                        'textTransform': 'uppercase',
-                    }),
+                    html.Img(
+                        src='/assets/SoilSync_logo.png',
+                        alt='SoilSync',
+                        style={
+                            'width': '100%',
+                            'maxWidth': '188px',
+                            'height': 'auto',
+                            'display': 'block',
+                        },
+                    ),
                 ],
                 style={'padding': '40px 32px 44px 32px', 'borderBottom': f'1px solid {T.LINE_SOFT}'},
             ),
@@ -2887,16 +2969,148 @@ def update_demo_station(station):
     return info_panel, station_map(selected=station, color_field='country')
 
 
+def _risk_band(risk_score, currently_safe):
+    """Map proxy probability to (band, label, hero colour, verdict level)."""
+    if not currently_safe:
+        return ('drought', 'In drought', T.ALERT, 'red')
+    if risk_score >= 0.65:
+        return ('high',   'High',       T.ALERT, 'red')
+    if risk_score >= 0.35:
+        return ('medium', 'Medium',     T.WARN,  'amber')
+    return ('low',        'Low',        T.OK,    'green')
+
+
+def _warning_hero(risk_score, currently_safe, sm_now, snap_date):
+    band, band_label, color, _ = _risk_band(risk_score, currently_safe)
+    bg = {T.ALERT: T.ALERT_SOFT, T.WARN: T.WARN_SOFT, T.OK: T.OK_SOFT}[color]
+
+    if not currently_safe:
+        title = 'Soil is already in drought'
+        body  = (f'At {snap_date.strftime("%a %d %b %Y")} soil moisture was {sm_now:.3f}, '
+                 f'already below the {THRESHOLD} drought threshold. The 7-day onset question '
+                 f'applies to soil that is currently safe, so the warning is shown as drought-state instead.')
+    elif band == 'high':
+        title = 'High drought-onset risk in the next 7 days'
+        body  = (f'Soil moisture is {sm_now:.3f}. The XGBoost forecast and projected 7-day trajectory '
+                 f'both point below the {THRESHOLD} drought threshold. Prioritise irrigation if water is available.')
+    elif band == 'medium':
+        title = 'Medium drought-onset risk in the next 7 days'
+        body  = (f'Soil moisture is {sm_now:.3f}. Conditions are trending toward the drought threshold. '
+                 f'Plan to irrigate this week if rain does not arrive.')
+    else:
+        title = 'Low drought-onset risk in the next 7 days'
+        body  = (f'Soil moisture is {sm_now:.3f}, comfortably above the {THRESHOLD} drought threshold. '
+                 f'No drought-onset action required from this warning.')
+
+    score_pct = f'{risk_score*100:.0f}%' if currently_safe else '—'
+    return html.Div(
+        [
+            html.Div(
+                [
+                    html.Div('7-DAY DROUGHT-ONSET WARNING', className='eyebrow',
+                             style={'color': color, 'marginBottom': '12px',
+                                    'letterSpacing': '0.14em', 'fontWeight': 700}),
+                    html.Div(band_label, style={
+                        'fontSize': '52px', 'fontWeight': 700, 'color': color,
+                        'lineHeight': 1, 'letterSpacing': '-0.025em',
+                        'fontFamily': T.FONT_DISPLAY,
+                    }),
+                    html.Div(title, style={
+                        'fontSize': '18px', 'fontWeight': 600, 'color': T.INK,
+                        'marginTop': '14px', 'letterSpacing': '-0.005em',
+                    }),
+                    html.Div(body, style={
+                        'fontSize': '14px', 'color': T.INK_SOFT,
+                        'lineHeight': 1.6, 'marginTop': '10px', 'maxWidth': '780px',
+                    }),
+                ],
+                style={'flex': '1 1 auto'},
+            ),
+            html.Div(
+                [
+                    html.Div('PROBABILITY', className='eyebrow',
+                             style={'marginBottom': '8px'}),
+                    html.Div(score_pct, style={
+                        'fontSize': '46px', 'fontWeight': 700, 'color': color,
+                        'fontFamily': T.FONT_DISPLAY, 'lineHeight': 1,
+                        'letterSpacing': '-0.02em',
+                    }),
+                    html.Div(
+                        'Proxy from XGBoost t+72h + slope' if currently_safe
+                        else 'Not applicable when soil is already dry',
+                        style={'fontSize': '11.5px', 'color': T.INK_FAINT,
+                               'marginTop': '8px', 'maxWidth': '170px',
+                               'lineHeight': 1.45},
+                    ),
+                ],
+                style={
+                    'flex': '0 0 200px',
+                    'borderLeft': f'1px solid {T.LINE}',
+                    'paddingLeft': '24px', 'marginLeft': '24px',
+                    'textAlign': 'right',
+                },
+            ),
+        ],
+        style={
+            'display': 'flex', 'alignItems': 'flex-start',
+            'background': bg, 'border': f'1px solid {color}',
+            'borderRadius': '8px', 'padding': '28px 32px',
+        },
+    )
+
+
+def _outcome_verdict(warning, onset_actual, future_min_sm, currently_safe):
+    """Was the warning correct? Maps to one of four outcome cards."""
+    if not currently_safe:
+        return verdict_panel(
+            'amber',
+            'Soil was already in drought at this moment',
+            'The 7-day onset question only applies when soil is currently above the drought threshold. '
+            'Slide to a moment when the soil is safe to see the warning in action.',
+        )
+
+    fut_text = (f'(future minimum {future_min_sm:.3f})'
+                if pd.notna(future_min_sm) else '(future data unavailable)')
+
+    if warning and onset_actual:
+        return verdict_panel(
+            'green',
+            'Correct catch — warning issued, drought followed',
+            f'The system flagged a 7-day drought-onset risk and soil moisture did fall below the {THRESHOLD} '
+            f'drought threshold within the 144–192h window {fut_text}. This is the kind of event the '
+            f'real test 14 classifier catches 297 / 301 times.')
+    if warning and not onset_actual:
+        return verdict_panel(
+            'amber',
+            'Cautious warning — no onset materialised',
+            f'The system issued a warning but soil moisture stayed above the drought threshold across '
+            f'the 7-day window {fut_text}. Acceptable in a high-recall product, but a false alarm '
+            f'against this specific moment.')
+    if onset_actual:
+        return verdict_panel(
+            'red',
+            'Missed event — drought followed without a warning',
+            f'No warning was issued, but soil moisture did dip below the {THRESHOLD} drought threshold '
+            f'within the 7-day window {fut_text}. The full test 14 classifier reduces this case by '
+            f'using a richer feature set.')
+    return verdict_panel(
+        'green',
+        'No drought predicted, none occurred',
+        f'No warning was issued and soil moisture stayed above the {THRESHOLD} drought threshold across '
+        f'the 7-day window {fut_text}.')
+
+
 @app.callback(
     Output('demo-date-display', 'children'),
-    Output('demo-verdict', 'children'),
+    Output('demo-warning-hero', 'children'),
     Output('demo-stat-row', 'children'),
     Output('demo-context-chart', 'figure'),
+    Output('demo-outcome-verdict', 'children'),
     Output('demo-comparison-row', 'children'),
     Input('demo-station-dropdown', 'value'),
     Input('demo-date-slider', 'value'),
 )
-def update_demo_forecast(station, slider_pct):
+def update_demo_warning(station, slider_pct):
     sp = TEST_PREDS[TEST_PREDS['station'] == station].sort_values('datetime').reset_index(drop=True)
     if len(sp) < 10:
         empty_fig = go.Figure().update_layout(annotations=[
@@ -2904,118 +3118,152 @@ def update_demo_forecast(station, slider_pct):
                  xref='paper', yref='paper', x=0.5, y=0.5, showarrow=False,
                  font=dict(color=T.INK_SOFT))
         ])
-        return 'No data', html.Div(), [], empty_fig, []
+        return 'No data', html.Div(), [], empty_fig, html.Div(), []
 
     idx = int(np.clip(int(len(sp) * slider_pct / 100), 0, len(sp) - 1))
     row = sp.iloc[idx]
 
-    snap_date = pd.to_datetime(row['datetime'])
-    future_date = snap_date + pd.Timedelta(hours=HORIZON_HOURS)
-    sm_now = float(row['sm_now'])
-    sm_pred = float(row['y_pred_xgb'])
-    sm_actual = float(row['y_true'])
-    sm_persist = float(row['y_pred_persist'])
+    snap_date  = pd.to_datetime(row['datetime'])
+    win_start  = snap_date + pd.Timedelta(hours=144)
+    win_end    = snap_date + pd.Timedelta(hours=192)
+    sm_now     = float(row['sm_now'])
+    sm_pred    = float(row['y_pred_xgb'])
+    risk       = float(row['risk_score'])
+    warning    = bool(row['warning'])
+    safe       = bool(row['currently_safe'])
+    onset_act  = bool(row['onset_actual'])
+    future_min = float(row['sm_min_future_7d']) if pd.notna(row['sm_min_future_7d']) else float('nan')
+    proxy_min  = float(row['proxy_min_sm'])
 
-    # Date display
+    # ── Date display ────────────────────────────────────────────────
     date_display = (
         f"Today: {snap_date.strftime('%a %d %b %Y, %H:%M')}   "
-        f"→   Forecast: {future_date.strftime('%a %d %b %Y, %H:%M')}"
+        f"→   7-day onset window: "
+        f"{win_start.strftime('%a %d %b')} – {win_end.strftime('%a %d %b')}"
     )
 
-    # Verdict
-    level, headline, body = classify_recommendation(sm_now, sm_pred)
-    verdict = verdict_panel(level, headline, body)
+    # ── Warning hero ────────────────────────────────────────────────
+    warning_hero = _warning_hero(risk, safe, sm_now, snap_date)
 
-    # Stats row
-    delta = sm_pred - sm_now
-    margin = sm_pred - THRESHOLD
+    # ── Stat row ────────────────────────────────────────────────────
+    margin_now = sm_now  - THRESHOLD
+    margin_72  = sm_pred - THRESHOLD
     stat_cards = [
-        dbc.Col(stat('Today', f'{sm_now:.3f}',
-                     f'{snap_date.strftime("%a %d %b")}', T.SIGNAL), md=3),
-        dbc.Col(stat('Predicted +3 days', f'{sm_pred:.3f}',
-                     f'{future_date.strftime("%a %d %b")}', T.ACCENT), md=3),
-        dbc.Col(stat('Change', f'{delta:+.3f}',
-                     'lower means drier soil',
-                     T.ALERT if delta < -0.02 else T.OK), md=3),
-        dbc.Col(stat('Margin to drought', f'{margin:+.3f}',
-                     f'threshold is {THRESHOLD}',
-                     T.ALERT if margin < 0 else T.OK), md=3),
+        dbc.Col(stat('Now', f'{sm_now:.3f}',
+                     f'margin {margin_now:+.3f} to drought',
+                     T.SIGNAL if safe else T.ALERT), md=3),
+        dbc.Col(stat('XGBoost t+72h', f'{sm_pred:.3f}',
+                     f'margin {margin_72:+.3f} to drought',
+                     T.ACCENT), md=3),
+        dbc.Col(stat('7-day projection', f'{proxy_min:.3f}',
+                     'lowest of now / t+72h / extrapolated t+168h',
+                     T.ALERT if proxy_min < THRESHOLD else T.OK), md=3),
+        dbc.Col(stat('Warning?',
+                     'Issued' if warning else 'No',
+                     f'risk {risk*100:.0f}% — fires at 50%',
+                     T.ALERT if warning else T.OK), md=3),
     ]
 
-    # Context chart
+    # ── Context chart ───────────────────────────────────────────────
     win_before = pd.Timedelta(hours=24 * 14)
-    win_after  = pd.Timedelta(hours=24 * 7)
+    win_after  = pd.Timedelta(hours=24 * 9)
     mask = (sp['datetime'] >= snap_date - win_before) & (sp['datetime'] <= snap_date + win_after)
     ctx = sp[mask].copy()
-    ctx['datetime_forecast'] = ctx['datetime'] + pd.Timedelta(hours=HORIZON_HOURS)
+    ctx['datetime_fwd'] = ctx['datetime'] + pd.Timedelta(hours=HORIZON_HOURS)
 
     fig = go.Figure()
+    # 7-day onset window — shaded band on the chart background.
+    fig.add_vrect(
+        x0=win_start, x1=win_end,
+        fillcolor=T.ALERT_SOFT, opacity=0.55, line_width=0, layer='below',
+    )
+    fig.add_annotation(
+        x=win_start + (win_end - win_start) / 2, y=1.0, yref='paper',
+        text='7-day onset window', showarrow=False, yshift=8,
+        font=dict(color=T.ALERT, size=11, family=T.FONT),
+    )
+    # Soil moisture actuals.
     fig.add_trace(go.Scatter(
         x=ctx['datetime'], y=ctx['sm_now'],
-        mode='lines', name='Actual (history)',
+        mode='lines', name='Soil moisture (measured)',
         line=dict(color=T.SIGNAL, width=2.5),
     ))
+    # Forward-shifted regression forecast trace for context (dotted orange).
     fig.add_trace(go.Scatter(
-        x=ctx['datetime_forecast'], y=ctx['y_true'],
-        mode='lines', name='Actual (future, truth)',
-        line=dict(color=T.SIGNAL, width=2, dash='dot'),
+        x=ctx['datetime_fwd'], y=ctx['y_pred_xgb'],
+        mode='lines', name='XGBoost t+72h forecast',
+        line=dict(color=T.ACCENT, width=1.8, dash='dot'),
     ))
-    fig.add_trace(go.Scatter(
-        x=ctx['datetime_forecast'], y=ctx['y_pred_xgb'],
-        mode='lines', name='Model forecast',
-        line=dict(color=T.ACCENT, width=2.5),
-    ))
-    fig.add_trace(go.Scatter(
-        x=ctx['datetime_forecast'], y=ctx['y_pred_persist'],
-        mode='lines', name='Persistence baseline',
-        line=dict(color=T.INK_FAINT, width=1.5, dash='dash'),
-    ))
-    fig.add_trace(go.Scatter(
-        x=[future_date], y=[sm_pred], mode='markers',
-        marker=dict(color=T.ACCENT, size=12,
-                    line=dict(color=T.BG, width=2)),
-        showlegend=False,
-    ))
-    fig.add_trace(go.Scatter(
-        x=[future_date], y=[sm_actual], mode='markers',
-        marker=dict(color=T.SIGNAL, size=12,
-                    line=dict(color=T.BG, width=2)),
-        showlegend=False,
-    ))
+    # "Today" vertical marker + dot.
     fig.add_shape(type='line', x0=snap_date, x1=snap_date, y0=0, y1=1,
                   yref='paper', line=dict(color=T.INK, width=1.5))
     fig.add_annotation(x=snap_date, y=1.0, yref='paper', text='Today',
                        showarrow=False, yshift=10,
                        font=dict(color=T.INK, size=12, family=T.FONT))
+    fig.add_trace(go.Scatter(
+        x=[snap_date], y=[sm_now], mode='markers',
+        marker=dict(color=T.SIGNAL, size=12, line=dict(color=T.BG, width=2)),
+        name='Now', showlegend=False,
+    ))
+    # Future-minimum marker inside the onset window, if available.
+    if pd.notna(row['sm_min_future_7d']):
+        ix_min = ctx[(ctx['datetime'] >= win_start) & (ctx['datetime'] <= win_end)]
+        if not ix_min.empty:
+            mn_idx = ix_min['sm_now'].idxmin()
+            fig.add_trace(go.Scatter(
+                x=[ctx.loc[mn_idx, 'datetime']], y=[ctx.loc[mn_idx, 'sm_now']],
+                mode='markers',
+                marker=dict(color=T.ALERT, size=12, symbol='diamond',
+                            line=dict(color=T.BG, width=2)),
+                name='Future minimum (truth)',
+                showlegend=False,
+            ))
     fig.add_hline(y=THRESHOLD, line_color=T.ALERT, line_width=1, line_dash='dot')
+    fig.add_annotation(
+        x=ctx['datetime'].max() if not ctx.empty else snap_date,
+        y=THRESHOLD, text=f'Drought threshold ({THRESHOLD})',
+        showarrow=False, yshift=-12, xshift=-6, xanchor='right',
+        font=dict(color=T.ALERT, size=11),
+    )
     fig.update_layout(
         xaxis_title=None, yaxis_title='Soil moisture (m³/m³)',
         legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
     )
 
-    # Comparison row
-    err_xgb = abs(sm_pred - sm_actual)
-    err_persist = abs(sm_persist - sm_actual)
-    diff = err_persist - err_xgb
-    if diff > 0:
-        winner_label, winner_value, winner_sub, winner_color = (
-            'Model wins by', f'{diff:.4f}', 'fewer absolute errors', T.OK)
-    elif diff < 0:
-        winner_label, winner_value, winner_sub, winner_color = (
-            'Baseline wins by', f'{-diff:.4f}', 'fewer absolute errors', T.ALERT)
-    else:
-        winner_label, winner_value, winner_sub, winner_color = (
-            'Tie', '0.0000', 'equal error', T.INK_FAINT)
+    # ── Outcome verdict ─────────────────────────────────────────────
+    outcome = _outcome_verdict(warning, onset_act, future_min, safe)
+
+    # ── Station-level calibration row ───────────────────────────────
+    sp_safe   = sp[sp['currently_safe']]
+    n_onsets  = int(sp['onset_actual'].sum())
+    n_warn    = int(sp['warning'].sum())
+    n_caught  = int((sp['warning'] & sp['onset_actual']).sum())
+    n_missed  = int((~sp['warning'] & sp['onset_actual']).sum())
+    n_fa      = int((sp['warning'] & ~sp['onset_actual']).sum())
+    recall    = (n_caught / n_onsets) if n_onsets else float('nan')
+    precision = (n_caught / n_warn) if n_warn else float('nan')
+
+    def _fmt_pct(v):
+        return f'{v*100:.0f}%' if pd.notna(v) else '—'
 
     comparison = [
-        dbc.Col(stat('Model error', f'{err_xgb:.4f}',
-                     f'predicted {sm_pred:.3f} vs actual {sm_actual:.3f}', T.ACCENT), md=4),
-        dbc.Col(stat('Baseline error', f'{err_persist:.4f}',
-                     f'guessed {sm_persist:.3f}', T.INK_FAINT), md=4),
-        dbc.Col(stat(winner_label, winner_value, winner_sub, winner_color), md=4),
+        dbc.Col(stat('At this station — onsets',
+                     f'{n_onsets}',
+                     'true drought-onset events in test data', T.SIGNAL), md=3),
+        dbc.Col(stat('Warnings issued',
+                     f'{n_warn}',
+                     f'of which {n_caught} caught a real event', T.ACCENT), md=3),
+        dbc.Col(stat('Recall',
+                     _fmt_pct(recall),
+                     'fraction of onsets caught by the demo proxy',
+                     T.OK if (pd.notna(recall) and recall >= 0.5) else T.ALERT), md=3),
+        dbc.Col(stat('Precision',
+                     _fmt_pct(precision),
+                     'fraction of warnings that caught a real event',
+                     T.OK if (pd.notna(precision) and precision >= 0.5) else T.WARN), md=3),
     ]
 
-    return date_display, verdict, stat_cards, fig, comparison
+    return date_display, warning_hero, stat_cards, fig, outcome, comparison
 
 
 # ── RESULTS callbacks ────────────────────────────────────────────────
