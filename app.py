@@ -2297,6 +2297,7 @@ app = Dash(
     suppress_callback_exceptions=True,
     title='Drought Warning System',
 )
+server = app.server  # used by gunicorn on Render
 
 # Custom index for global typography
 app.index_string = '''
