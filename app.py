@@ -1557,7 +1557,7 @@ def page_demo():
                             tooltip={'always_visible': False},
                             updatemode='drag',
                         ),
-                        style={'padding': '0 16px', 'touchAction': 'pan-y'},
+                        style={'padding': '0 16px'},
                     ),
                 ],
                 style={'marginBottom': '72px'},
@@ -2714,7 +2714,7 @@ app.index_string = '''
                     z-index: 2;
                 }
                 .sidebar-overlay {
-                    display: none;
+                    display: block;
                     position: fixed;
                     inset: 0;
                     background: rgba(14, 20, 16, 0.42);
@@ -2724,7 +2724,6 @@ app.index_string = '''
                     transition: opacity var(--dur-base) var(--ease-out);
                 }
                 .sidebar-overlay.visible {
-                    display: block;
                     opacity: 1;
                     pointer-events: auto;
                 }
@@ -2836,7 +2835,6 @@ app.layout = html.Div(
     [
         dcc.Store(id='current-page', data='home'),
         dcc.Store(id='sidebar-open', data=False),
-        html.Div(id='nav-sync', style={'display': 'none'}),
         html.Div(id='sidebar-overlay', className='sidebar-overlay', n_clicks=0),
         sidebar(),
         html.Div(
@@ -2873,24 +2871,14 @@ app.layout = html.Div(
     Input('sidebar-toggle', 'n_clicks'),
     Input('sidebar-close', 'n_clicks'),
     Input('sidebar-overlay', 'n_clicks'),
+    Input({'type': 'nav-link', 'page': dash.ALL}, 'n_clicks'),
     State('sidebar-open', 'data'),
     prevent_initial_call=True,
 )
-def toggle_sidebar(_toggle, _close, _overlay, is_open):
+def toggle_sidebar(_toggle, _close, _overlay, _nav_clicks, is_open):
     triggered = dash.callback_context.triggered_id
     if triggered == 'sidebar-toggle':
         return not is_open
-    if triggered in ('sidebar-close', 'sidebar-overlay'):
-        return False
-    return no_update
-
-
-@app.callback(
-    Output('sidebar-open', 'data', allow_duplicate=True),
-    Input('current-page', 'data'),
-    prevent_initial_call=True,
-)
-def close_sidebar_on_nav(_page):
     return False
 
 
@@ -2953,7 +2941,7 @@ app.clientside_callback(
         return '';
     }
     ''',
-    Output('nav-sync', 'children'),
+    Output('current-page', 'title'),
     Input('current-page', 'data'),
 )
 
@@ -3332,17 +3320,8 @@ def _outcome_verdict(warning, onset_actual, future_min_sm, currently_safe):
     Output('demo-comparison-row', 'children'),
     Input('demo-station-dropdown', 'value'),
     Input('demo-date-slider', 'value'),
-    Input('demo-date-slider', 'drag_value'),
-    Input('current-page', 'data'),
 )
-def update_demo_warning(station, slider_value, slider_drag, page):
-    if page != 'demo':
-        return (no_update,) * 6
-
-    slider_pct = slider_drag if slider_drag is not None else slider_value
-    if slider_pct is None:
-        return (no_update,) * 6
-
+def update_demo_warning(station, slider_pct):
     sp = TEST_PREDS[TEST_PREDS['station'] == station].sort_values('datetime').reset_index(drop=True)
     if len(sp) < 10:
         empty_fig = go.Figure().update_layout(annotations=[
