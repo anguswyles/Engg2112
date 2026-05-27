@@ -2218,6 +2218,13 @@ def sidebar():
 
     return html.Div(
         [
+            html.Button(
+                '✕',
+                id='sidebar-close',
+                className='sidebar-close',
+                n_clicks=0,
+                **{'aria-label': 'Close navigation menu'},
+            ),
             # Wordmark
             html.Div(
                 [
@@ -2276,15 +2283,8 @@ def sidebar():
                 style={'position': 'absolute', 'bottom': '32px', 'left': '32px', 'right': '32px'},
             ),
         ],
-        style={
-            'position': 'fixed', 'left': 0, 'top': 0, 'bottom': 0,
-            'width': '252px',
-            'background': T.PANEL,
-            'borderRight': f'1px solid {T.LINE}',
-            'fontFamily': T.FONT,
-            'boxShadow': '1px 0 0 rgba(40, 30, 20, 0.02)',
-            'overflow': 'hidden',
-        },
+        id='app-sidebar',
+        className='app-sidebar',
     )
 
 
@@ -2336,10 +2336,18 @@ app.index_string = '''
                 --font: ''' + T.FONT + ''';
                 --font-display: ''' + T.FONT_DISPLAY + ''';
                 --font-mono: ''' + T.FONT_MONO + ''';
+                --sidebar-width: 252px;
+                --mobile-topbar-height: 56px;
             }
 
             * { box-sizing: border-box; }
-            html, body { margin: 0; padding: 0; background: var(--bg); }
+            html, body {
+                margin: 0;
+                padding: 0;
+                background: var(--bg);
+                overflow-x: hidden;
+                max-width: 100%;
+            }
             body {
                 font-family: var(--font);
                 color: var(--ink);
@@ -2348,6 +2356,55 @@ app.index_string = '''
                 -moz-osx-font-smoothing: grayscale;
                 text-rendering: optimizeLegibility;
                 font-feature-settings: "cv11", "ss01", "ss03";
+            }
+
+            #app-shell {
+                min-height: 100vh;
+                background: var(--bg);
+                overflow-x: hidden;
+                max-width: 100%;
+            }
+
+            /* App shell — sidebar + main content */
+            .app-sidebar {
+                position: fixed;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                width: var(--sidebar-width);
+                background: var(--panel);
+                border-right: 1px solid var(--line);
+                font-family: var(--font);
+                box-shadow: 1px 0 0 rgba(40, 30, 20, 0.02);
+                overflow: hidden;
+                z-index: 1100;
+                transition: transform var(--dur-slow) var(--ease-drawer);
+            }
+            .sidebar-close {
+                display: none;
+            }
+            .sidebar-overlay {
+                display: none;
+            }
+            .app-main {
+                margin-left: var(--sidebar-width);
+                padding: 28px 36px 56px 36px;
+                max-width: 1320px;
+                font-family: var(--font);
+                width: calc(100% - var(--sidebar-width));
+            }
+            .mobile-topbar {
+                display: none;
+            }
+            #page-content {
+                background: var(--panel);
+                padding: 80px 88px;
+                min-height: 100vh;
+                border-radius: 2px;
+                box-shadow: var(--shadow-lg);
+                border: 1px solid var(--line-soft);
+                max-width: 100%;
+                overflow-x: hidden;
             }
 
             /* The whole content surface fades up on first mount.
@@ -2631,6 +2688,128 @@ app.index_string = '''
             }
             ::-webkit-scrollbar-thumb:hover { background: var(--ink-faint); }
 
+            /* Mobile — hide fixed sidebar, full-width content, drawer nav */
+            @media (max-width: 991px) {
+                .app-sidebar {
+                    transform: translateX(-100%);
+                    box-shadow: var(--shadow-lg);
+                }
+                .app-sidebar.open {
+                    transform: translateX(0);
+                }
+                .sidebar-close {
+                    display: block;
+                    position: absolute;
+                    top: 16px;
+                    right: 16px;
+                    width: 36px;
+                    height: 36px;
+                    border: 1px solid var(--line);
+                    border-radius: 4px;
+                    background: var(--panel-raised);
+                    color: var(--ink-soft);
+                    font-size: 18px;
+                    line-height: 1;
+                    cursor: pointer;
+                    z-index: 2;
+                }
+                .sidebar-overlay {
+                    display: block;
+                    position: fixed;
+                    inset: 0;
+                    background: rgba(14, 20, 16, 0.42);
+                    z-index: 1050;
+                    opacity: 0;
+                    pointer-events: none;
+                    transition: opacity var(--dur-base) var(--ease-out);
+                }
+                .sidebar-overlay.visible {
+                    opacity: 1;
+                    pointer-events: auto;
+                }
+                .app-main {
+                    margin-left: 0;
+                    padding: calc(var(--mobile-topbar-height) + 12px) 0 32px 0;
+                    width: 100%;
+                    max-width: 100%;
+                }
+                .mobile-topbar {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    height: var(--mobile-topbar-height);
+                    padding: 0 16px;
+                    background: var(--panel);
+                    border-bottom: 1px solid var(--line-soft);
+                    z-index: 1000;
+                }
+                .sidebar-toggle {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 40px;
+                    height: 40px;
+                    border: 1px solid var(--line);
+                    border-radius: 4px;
+                    background: var(--panel-raised);
+                    color: var(--ink);
+                    cursor: pointer;
+                    padding: 0;
+                    flex-shrink: 0;
+                }
+                .sidebar-toggle-icon {
+                    display: block;
+                    width: 16px;
+                    height: 2px;
+                    background: var(--ink);
+                    position: relative;
+                }
+                .sidebar-toggle-icon::before,
+                .sidebar-toggle-icon::after {
+                    content: "";
+                    position: absolute;
+                    left: 0;
+                    width: 16px;
+                    height: 2px;
+                    background: var(--ink);
+                }
+                .sidebar-toggle-icon::before { top: -5px; }
+                .sidebar-toggle-icon::after  { top: 5px; }
+                .mobile-topbar-title {
+                    font-size: 14px;
+                    font-weight: 600;
+                    color: var(--ink);
+                    letter-spacing: -0.01em;
+                }
+                #page-content {
+                    padding: 24px 16px;
+                    border-radius: 0;
+                    border-left: none;
+                    border-right: none;
+                    min-height: calc(100vh - var(--mobile-topbar-height));
+                }
+                .js-plotly-plot,
+                .js-plotly-plot .plotly,
+                .js-plotly-plot .svg-container {
+                    max-width: 100% !important;
+                }
+                .mobile-stack {
+                    flex-direction: column !important;
+                }
+                .mobile-stack > * {
+                    flex: 1 1 auto !important;
+                    max-width: 100% !important;
+                    border-left: none !important;
+                    margin-left: 0 !important;
+                    padding-left: 0 !important;
+                    text-align: left !important;
+                }
+            }
+
             /* prefers-reduced-motion — keep fades, drop movement */
             @media (prefers-reduced-motion: reduce) {
                 *, *::before, *::after {
@@ -2655,34 +2834,64 @@ app.index_string = '''
 app.layout = html.Div(
     [
         dcc.Store(id='current-page', data='home'),
+        dcc.Store(id='sidebar-open', data=False),
+        html.Div(id='sidebar-overlay', className='sidebar-overlay', n_clicks=0),
         sidebar(),
         html.Div(
-            html.Div(
-                id='page-content',
-                style={
-                    'background': T.PANEL,
-                    'padding': '80px 88px',
-                    'minHeight': '100vh',
-                    'borderRadius': '2px',
-                    'boxShadow': T.SHADOW_LG,
-                    'border': f'1px solid {T.LINE_SOFT}',
-                },
-            ),
-            style={
-                'marginLeft': '252px',
-                'padding': '28px 36px 56px 36px',
-                'maxWidth': '1320px',
-                'fontFamily': T.FONT,
-            },
+            [
+                html.Div(
+                    [
+                        html.Button(
+                            html.Span(className='sidebar-toggle-icon'),
+                            id='sidebar-toggle',
+                            className='sidebar-toggle',
+                            n_clicks=0,
+                            **{'aria-label': 'Open navigation menu'},
+                        ),
+                        html.Span('SoilSync', className='mobile-topbar-title'),
+                    ],
+                    className='mobile-topbar',
+                ),
+                html.Div(id='page-content'),
+            ],
+            id='app-main',
+            className='app-main',
         ),
     ],
-    style={'background': T.BG, 'minHeight': '100vh'},
+    id='app-shell',
 )
 
 
 # ──────────────────────────────────────────────────────────────────────
 # Callbacks
 # ──────────────────────────────────────────────────────────────────────
+
+@app.callback(
+    Output('sidebar-open', 'data'),
+    Input('sidebar-toggle', 'n_clicks'),
+    Input('sidebar-close', 'n_clicks'),
+    Input('sidebar-overlay', 'n_clicks'),
+    Input({'type': 'nav-link', 'page': dash.ALL}, 'n_clicks'),
+    State('sidebar-open', 'data'),
+    prevent_initial_call=True,
+)
+def toggle_sidebar(_toggle, _close, _overlay, _nav_clicks, is_open):
+    triggered = dash.callback_context.triggered_id
+    if triggered == 'sidebar-toggle':
+        return not is_open
+    return False
+
+
+@app.callback(
+    Output('app-sidebar', 'className'),
+    Output('sidebar-overlay', 'className'),
+    Input('sidebar-open', 'data'),
+)
+def sidebar_drawer_state(is_open):
+    sidebar_cls = 'app-sidebar open' if is_open else 'app-sidebar'
+    overlay_cls = 'sidebar-overlay visible' if is_open else 'sidebar-overlay'
+    return sidebar_cls, overlay_cls
+
 
 @app.callback(
     Output('current-page', 'data'),
@@ -3052,6 +3261,7 @@ def _warning_hero(risk_score, currently_safe, sm_now, snap_date):
                 },
             ),
         ],
+        className='mobile-stack',
         style={
             'display': 'flex', 'alignItems': 'flex-start',
             'background': bg, 'border': f'1px solid {color}',
