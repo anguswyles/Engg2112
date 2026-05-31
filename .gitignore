@@ -1,5 +1,20 @@
-.claude/
+# Python
 __pycache__/
 *.pyc
 *.pyo
+
+# Claude Code
+.claude/
+.agents/
+skills-lock.json
+
+# LaTeX build artefacts
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.toc
 
