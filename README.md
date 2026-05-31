@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Machine learning for soil moisture forecasting and irrigation decision support</strong><br/>
-  ENGG2112 · University of Queensland · 2025
+  ENGG2112 · University of Sydney · 2026
 </p>
 
 <p align="center">
