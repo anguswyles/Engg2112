@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="#https://engg2112.onrender.com/">🌐 Project Website</a> &nbsp;·&nbsp;
+  <a href="https://engg2112.onrender.com/">🌐 Project Website</a> &nbsp;·&nbsp;
   <a href="#results">Results</a> &nbsp;·&nbsp;
   <a href="#running-an-experiment">Quick Start</a> &nbsp;·&nbsp;
   <a href="#team">Team</a>
